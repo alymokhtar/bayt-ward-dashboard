@@ -23,3 +23,13 @@ model Post {
   status             PostStatus @default(PENDING)
   createdAt          DateTime   @default(now())
 }
+
+model Settings {
+  id                 String   @id @default("store")
+  storeName          String   @default("بيت ورد") @db.Text
+  defaultHashtags    String   @default("#بيت_ورد #تنسيق_زهور") @db.Text
+  facebookPageId     String   @default("") @db.Text
+  instagramAccountId String   @default("") @db.Text
+  tiktokAccountId    String   @default("") @db.Text
+  updatedAt          DateTime @updatedAt
+}

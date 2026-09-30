@@ -31,17 +31,18 @@ type SettingsClientProps = {
 
 type SavedSettings = {
   storeName: string;
-  hashtags: string;
+  defaultHashtags: string;
   facebookPageId: string;
   instagramAccountId: string;
+  tiktokAccountId: string;
 };
 
-const STORAGE_KEY = "bayt-ward-dashboard-settings-v1";
 const DEFAULT_SETTINGS: SavedSettings = {
   storeName: "بيت ورد",
-  hashtags: "#بيت_ورد #تنسيق_زهور",
+  defaultHashtags: "#بيت_ورد #تنسيق_زهور",
   facebookPageId: "",
   instagramAccountId: "",
+  tiktokAccountId: "",
 };
 
 const SETTINGS_SECTIONS = [
@@ -54,35 +55,46 @@ const SETTINGS_SECTIONS = [
 export default function SettingsClient({ cloudinaryConfigured }: SettingsClientProps) {
   const [settings, setSettings] = useState<SavedSettings>(DEFAULT_SETTINGS);
   const [settingsLoaded, setSettingsLoaded] = useState(false);
+  const [isSaving, setIsSaving] = useState(false);
+  const [settingsError, setSettingsError] = useState("");
   const [facebookAccessToken, setFacebookAccessToken] = useState("");
   const [showAccessToken, setShowAccessToken] = useState(false);
   const [toast, setToast] = useState("");
+  const [toastIsError, setToastIsError] = useState(false);
   const toastTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   useEffect(() => {
-    try {
-      const saved = window.localStorage.getItem(STORAGE_KEY);
-      if (saved) {
-        const parsed: unknown = JSON.parse(saved);
-        const values = parsed && typeof parsed === "object" ? parsed as Partial<SavedSettings> : {};
-        window.setTimeout(() => {
-          setSettings({
-            storeName: typeof values.storeName === "string" ? values.storeName : DEFAULT_SETTINGS.storeName,
-            hashtags: typeof values.hashtags === "string" ? values.hashtags : DEFAULT_SETTINGS.hashtags,
-            facebookPageId: typeof values.facebookPageId === "string" ? values.facebookPageId : "",
-            instagramAccountId: typeof values.instagramAccountId === "string" ? values.instagramAccountId : "",
-          });
-          setSettingsLoaded(true);
-        }, 0);
-      } else {
-        window.setTimeout(() => setSettingsLoaded(true), 0);
-      }
-    } catch {
-      // Ignore unavailable or malformed local settings and use safe defaults.
-      window.setTimeout(() => setSettingsLoaded(true), 0);
-    }
+    const controller = new AbortController();
+    void fetch("/api/settings", { cache: "no-store", signal: controller.signal })
+      .then(async (response) => {
+        const result: unknown = await response.json();
+        if (!response.ok) {
+          const message = result && typeof result === "object" && "error" in result && typeof result.error === "string"
+            ? result.error
+            : "تعذّر تحميل الإعدادات من قاعدة البيانات.";
+          throw new Error(message);
+        }
+
+        const values = result && typeof result === "object" ? result as Partial<SavedSettings> : {};
+        setSettings({
+          storeName: typeof values.storeName === "string" ? values.storeName : DEFAULT_SETTINGS.storeName,
+          defaultHashtags: typeof values.defaultHashtags === "string" ? values.defaultHashtags : DEFAULT_SETTINGS.defaultHashtags,
+          facebookPageId: typeof values.facebookPageId === "string" ? values.facebookPageId : "",
+          instagramAccountId: typeof values.instagramAccountId === "string" ? values.instagramAccountId : "",
+          tiktokAccountId: typeof values.tiktokAccountId === "string" ? values.tiktokAccountId : "",
+        });
+      })
+      .catch((error: unknown) => {
+        if (!controller.signal.aborted) {
+          setSettingsError(error instanceof Error ? error.message : "تعذّر تحميل الإعدادات من قاعدة البيانات.");
+        }
+      })
+      .finally(() => {
+        if (!controller.signal.aborted) setSettingsLoaded(true);
+      });
 
     return () => {
+      controller.abort();
       if (toastTimer.current) clearTimeout(toastTimer.current);
     };
   }, []);
@@ -91,22 +103,47 @@ export default function SettingsClient({ cloudinaryConfigured }: SettingsClientP
     setSettings((current) => ({ ...current, [key]: value }));
   }
 
-  function saveSettings(event: React.FormEvent<HTMLFormElement>) {
+  async function saveSettings(event: React.FormEvent<HTMLFormElement>) {
     event.preventDefault();
+    if (isSaving) return;
 
+    setIsSaving(true);
+    setSettingsError("");
     try {
-      window.localStorage.setItem(STORAGE_KEY, JSON.stringify(settings));
-      setToast(
-        facebookAccessToken
-          ? "حُفظت الإعدادات. لم يُحفظ رمز الوصول حفاظاً على أمانه."
-          : "تم حفظ التغييرات بنجاح.",
-      );
+      const response = await fetch("/api/settings", {
+        method: "PUT",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(settings),
+      });
+      const result: unknown = await response.json();
+      if (!response.ok) {
+        const message = result && typeof result === "object" && "error" in result && typeof result.error === "string"
+          ? result.error
+          : "تعذّر حفظ الإعدادات في قاعدة البيانات.";
+        throw new Error(message);
+      }
+
+      const values = result && typeof result === "object" ? result as Partial<SavedSettings> : {};
+      setSettings((current) => ({
+        storeName: typeof values.storeName === "string" ? values.storeName : current.storeName,
+        defaultHashtags: typeof values.defaultHashtags === "string" ? values.defaultHashtags : current.defaultHashtags,
+        facebookPageId: typeof values.facebookPageId === "string" ? values.facebookPageId : current.facebookPageId,
+        instagramAccountId: typeof values.instagramAccountId === "string" ? values.instagramAccountId : current.instagramAccountId,
+        tiktokAccountId: typeof values.tiktokAccountId === "string" ? values.tiktokAccountId : current.tiktokAccountId,
+      }));
+      setToast(facebookAccessToken
+        ? "حُفظت الإعدادات في قاعدة البيانات. لم يُرسل رمز الوصول حفاظاً على أمانه."
+        : "تم حفظ التغييرات في قاعدة البيانات بنجاح.");
+      setToastIsError(false);
       if (toastTimer.current) clearTimeout(toastTimer.current);
       toastTimer.current = setTimeout(() => setToast(""), 4500);
-    } catch {
-      setToast("تعذّر حفظ الإعدادات في هذا المتصفح.");
+    } catch (error) {
+      setToast(error instanceof Error ? error.message : "تعذّر حفظ الإعدادات في قاعدة البيانات.");
+      setToastIsError(true);
       if (toastTimer.current) clearTimeout(toastTimer.current);
       toastTimer.current = setTimeout(() => setToast(""), 4500);
+    } finally {
+      setIsSaving(false);
     }
   }
 
@@ -185,13 +222,13 @@ export default function SettingsClient({ cloudinaryConfigured }: SettingsClientP
                   <Field label="الوسوم الافتراضية" htmlFor="hashtags" hint="تُضاف تلقائياً عند إعداد نص المنشور">
                     <div className="relative">
                       <Hash size={16} className="pointer-events-none absolute right-3.5 top-3.5 text-[#9b9c95]" />
-                      <input id="hashtags" value={settings.hashtags} onChange={(event) => updateSetting("hashtags", event.target.value)} className={`${inputClass} pr-10`} dir="rtl" placeholder="#بيت_ورد #تنسيق_زهور" />
+                      <input id="hashtags" value={settings.defaultHashtags} onChange={(event) => updateSetting("defaultHashtags", event.target.value)} className={`${inputClass} pr-10`} dir="rtl" placeholder="#بيت_ورد #تنسيق_زهور" />
                     </div>
                   </Field>
                   <div className="sm:col-span-2 flex flex-wrap items-center gap-2 rounded-xl bg-[#f8f8f4] px-3.5 py-3">
                     <WandSparkles size={15} className="text-[#a27d52]" />
                     <span className="text-[11px] text-[#858a82]">معاينة الوسوم:</span>
-                    {(settings.hashtags.trim() || "#بيت_ورد #تنسيق_زهور").split(/\s+/).filter(Boolean).map((tag) => <span key={tag} className="rounded-full bg-white px-2.5 py-1 text-[10px] font-semibold text-[#577064]">{tag.startsWith("#") ? tag : `#${tag}`}</span>)}
+                    {(settings.defaultHashtags.trim() || "#بيت_ورد #تنسيق_زهور").split(/\s+/).filter(Boolean).map((tag) => <span key={tag} className="rounded-full bg-white px-2.5 py-1 text-[10px] font-semibold text-[#577064]">{tag.startsWith("#") ? tag : `#${tag}`}</span>)}
                   </div>
                 </div>
               </section>
@@ -210,6 +247,12 @@ export default function SettingsClient({ cloudinaryConfigured }: SettingsClientP
                       <div className="relative">
                         <Camera size={16} className="pointer-events-none absolute right-3.5 top-1/2 -translate-y-1/2 text-[#bd647b]" />
                         <input id="instagram-account-id" value={settings.instagramAccountId} onChange={(event) => updateSetting("instagramAccountId", event.target.value)} className={`${inputClass} pr-10`} placeholder="معرّف الحساب التجاري" autoComplete="off" />
+                      </div>
+                    </Field>
+                    <Field label="TikTok Account ID" htmlFor="tiktok-account-id" hint="معرّف حساب TikTok">
+                      <div className="relative">
+                        <Camera size={16} className="pointer-events-none absolute right-3.5 top-1/2 -translate-y-1/2 text-[#354d59]" />
+                        <input id="tiktok-account-id" value={settings.tiktokAccountId} onChange={(event) => updateSetting("tiktokAccountId", event.target.value)} className={`${inputClass} pr-10`} placeholder="معرّف الحساب" autoComplete="off" />
                       </div>
                     </Field>
                   </div>
@@ -269,10 +312,10 @@ export default function SettingsClient({ cloudinaryConfigured }: SettingsClientP
               </section>
 
               <div className="sticky bottom-3 z-10 flex flex-col-reverse gap-3 rounded-2xl border border-[#ece9e2] bg-white/95 p-3 shadow-[0_8px_30px_rgba(42,53,44,0.08)] backdrop-blur-xl sm:static sm:flex-row sm:items-center sm:justify-between sm:border-0 sm:bg-transparent sm:p-0 sm:shadow-none">
-                <p className="hidden text-[11px] text-[#969990] sm:block">تُحفظ إعدادات المتجر ومعرّفات الحساب في هذا المتصفح.</p>
-                <button type="submit" disabled={!settingsLoaded} className="inline-flex min-h-11 items-center justify-center gap-2 rounded-xl bg-[#205c4e] px-5 py-3 text-sm font-bold text-white shadow-[0_5px_12px_rgba(32,92,78,0.16)] transition hover:bg-[#184d41] disabled:cursor-wait disabled:opacity-60">
-                  {!settingsLoaded ? <span className="size-4 animate-spin rounded-full border-2 border-white/40 border-t-white" /> : <Save size={16} />}
-                  {settingsLoaded ? "حفظ التغييرات" : "جار تحميل الإعدادات..."}
+                <p className="hidden text-[11px] text-[#969990] sm:block">تُحفظ إعدادات المتجر ومعرّفات الحساب في قاعدة بيانات المتجر.</p>
+                <button type="submit" disabled={!settingsLoaded || isSaving} className="inline-flex min-h-11 items-center justify-center gap-2 rounded-xl bg-[#205c4e] px-5 py-3 text-sm font-bold text-white shadow-[0_5px_12px_rgba(32,92,78,0.16)] transition hover:bg-[#184d41] disabled:cursor-wait disabled:opacity-60">
+                  {isSaving || !settingsLoaded ? <span className="size-4 animate-spin rounded-full border-2 border-white/40 border-t-white" /> : <Save size={16} />}
+                  {!settingsLoaded ? "جار تحميل الإعدادات..." : isSaving ? "جارٍ حفظ التغييرات..." : "حفظ التغييرات"}
                 </button>
               </div>
               </fieldset>
@@ -281,9 +324,10 @@ export default function SettingsClient({ cloudinaryConfigured }: SettingsClientP
         </div>
       </div>
 
+      {settingsError ? <p role="alert" className="fixed bottom-4 left-4 right-4 z-40 mx-auto max-w-xl rounded-xl border border-[#f0d4cc] bg-[#fff5f2] px-4 py-3 text-xs leading-6 text-[#a44f46] shadow-lg">{settingsError}</p> : null}
       {toast ? (
-        <div role="status" aria-live="polite" className="fixed bottom-24 left-4 right-4 z-50 mx-auto flex max-w-md items-start gap-3 rounded-2xl border border-[#d9e8d9] bg-white px-4 py-3.5 text-sm text-[#426a4c] shadow-[0_12px_36px_rgba(35,66,47,0.16)] sm:bottom-6 sm:left-auto sm:right-6">
-          <span className="grid size-7 shrink-0 place-items-center rounded-full bg-[#edf6ef]"><CheckCircle2 size={16} /></span>
+        <div role={toastIsError ? "alert" : "status"} aria-live="polite" className={`fixed bottom-24 left-4 right-4 z-50 mx-auto flex max-w-md items-start gap-3 rounded-2xl border bg-white px-4 py-3.5 text-sm shadow-[0_12px_36px_rgba(35,66,47,0.16)] sm:bottom-6 sm:left-auto sm:right-6 ${toastIsError ? "border-[#f0d4cc] text-[#a44f46]" : "border-[#d9e8d9] text-[#426a4c]"}`}>
+          <span className={`grid size-7 shrink-0 place-items-center rounded-full ${toastIsError ? "bg-[#fff1ef]" : "bg-[#edf6ef]"}`}>{toastIsError ? <X size={16} /> : <CheckCircle2 size={16} />}</span>
           <span className="flex-1 text-xs leading-6">{toast}</span>
           <button type="button" onClick={() => setToast("")} className="rounded-md p-1 text-[#8f998f] hover:bg-[#f4f6f1]" aria-label="إغلاق الإشعار"><X size={15} /></button>
         </div>

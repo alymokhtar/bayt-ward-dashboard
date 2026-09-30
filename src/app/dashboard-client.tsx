@@ -286,18 +286,22 @@ export default function DashboardClient({ initialPosts, initialStats, databaseAv
   }, []);
 
   useEffect(() => {
-    try {
-      const saved = window.localStorage.getItem("bayt-ward-dashboard-settings-v1");
-      const parsed: unknown = saved ? JSON.parse(saved) : null;
-      const savedStoreName = parsed && typeof parsed === "object" && "storeName" in parsed
-        ? parsed.storeName
-        : null;
-      if (typeof savedStoreName === "string" && savedStoreName.trim()) {
-        window.setTimeout(() => setStoreName(savedStoreName.trim()), 0);
-      }
-    } catch {
-      // Keep the default brand name when browser settings are unavailable or malformed.
-    }
+    const controller = new AbortController();
+    void fetch("/api/settings", { cache: "no-store", signal: controller.signal })
+      .then(async (response) => {
+        if (!response.ok) return;
+        const value: unknown = await response.json();
+        const savedStoreName = value && typeof value === "object" && "storeName" in value
+          ? value.storeName
+          : null;
+        if (typeof savedStoreName === "string" && savedStoreName.trim()) {
+          setStoreName(savedStoreName.trim());
+        }
+      })
+      .catch(() => {
+        // Keep the default brand name when the settings API is unavailable.
+      });
+    return () => controller.abort();
   }, []);
 
   useEffect(() => {
@@ -404,36 +408,35 @@ export default function DashboardClient({ initialPosts, initialStats, databaseAv
 
     setIsSaving(true);
     try {
+      const settingsResponse = await fetch("/api/settings", { cache: "no-store" });
+      const savedSettings: unknown = await settingsResponse.json();
+      if (!settingsResponse.ok) {
+        const message = savedSettings && typeof savedSettings === "object" && "error" in savedSettings && typeof savedSettings.error === "string"
+          ? savedSettings.error
+          : "تعذّر تحميل الوسوم الافتراضية من إعدادات المتجر.";
+        setError(message);
+        return;
+      }
+
+      const defaultHashtags = savedSettings && typeof savedSettings === "object" && "defaultHashtags" in savedSettings && typeof savedSettings.defaultHashtags === "string"
+        ? savedSettings.defaultHashtags.trim().split(/\s+/).filter(Boolean)
+        : [];
+      let finalCaption = caption.trim();
+      const missingHashtags = defaultHashtags
+        .map((tag) => (tag.startsWith("#") ? tag : `#${tag}`))
+        .filter((tag) => !finalCaption.includes(tag));
+      if (missingHashtags.length > 0) finalCaption = `${finalCaption}\n\n${missingHashtags.join(" ")}`;
+
+      if (finalCaption.length > 2200) {
+        setError("نص المنشور مع الوسوم الافتراضية يتجاوز الحد الأقصى 2200 حرف. اختصري النص أو الوسوم.");
+        return;
+      }
+
       const formData = new FormData();
       formData.set("file", selectedFile);
       const upload = await uploadMedia(formData);
       if (!upload.success) {
         setError(upload.error);
-        return;
-      }
-
-      let finalCaption = caption.trim();
-      try {
-        const savedSettings = window.localStorage.getItem("bayt-ward-dashboard-settings-v1");
-        const defaultHashtags = savedSettings
-          ? (JSON.parse(savedSettings) as { hashtags?: string }).hashtags?.trim().split(/\s+/) ?? []
-          : [];
-        const missingHashtags = defaultHashtags
-          .filter(Boolean)
-          .map((tag) => (tag.startsWith("#") ? tag : `#${tag}`))
-          .filter((tag) => !finalCaption.includes(tag));
-
-        if (missingHashtags.length > 0) {
-          finalCaption = `${finalCaption}\n\n${missingHashtags.join(" ")}`;
-        }
-      } catch {
-        // Publishing continues with the entered caption if saved settings cannot be read.
-      }
-
-      if (finalCaption.length > 2200) {
-        const cleanedUp = await cleanupFailedUpload(upload.publicId, upload.mediaUrl);
-        setError("نص المنشور مع الوسوم الافتراضية يتجاوز الحد الأقصى 2200 حرف. اختصري النص أو الوسوم.");
-        if (!cleanedUp) setError((message) => `${message} وتعذّر تنظيف الملف المرفوع من Cloudinary.`);
         return;
       }
 
