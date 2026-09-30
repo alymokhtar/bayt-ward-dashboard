@@ -129,7 +129,7 @@ function Sidebar() {
           <Send size={18} strokeWidth={1.8} />
           <span>قنوات النشر</span>
         </a>
-        <a href="#" className="flex items-center gap-3 rounded-xl px-3.5 py-3 text-sm font-medium text-[#777b75] transition hover:bg-[#f7f6f2] hover:text-[#24483e]">
+        <a href="/settings" className="flex items-center gap-3 rounded-xl px-3.5 py-3 text-sm font-medium text-[#777b75] transition hover:bg-[#f7f6f2] hover:text-[#24483e]">
           <Settings2 size={18} strokeWidth={1.8} />
           <span>الإعدادات</span>
         </a>
@@ -310,8 +310,26 @@ export default function DashboardClient({ initialPosts, initialStats, databaseAv
         return;
       }
 
+      let finalCaption = caption.trim();
+      try {
+        const savedSettings = window.localStorage.getItem("bayt-ward-dashboard-settings-v1");
+        const defaultHashtags = savedSettings
+          ? (JSON.parse(savedSettings) as { hashtags?: string }).hashtags?.trim().split(/\s+/) ?? []
+          : [];
+        const missingHashtags = defaultHashtags
+          .filter(Boolean)
+          .map((tag) => (tag.startsWith("#") ? tag : `#${tag}`))
+          .filter((tag) => !finalCaption.includes(tag));
+
+        if (missingHashtags.length > 0) {
+          finalCaption = `${finalCaption}\n\n${missingHashtags.join(" ")}`;
+        }
+      } catch {
+        // Publishing continues with the entered caption if saved settings cannot be read.
+      }
+
       const result = await createPost({
-        caption: caption.trim(),
+        caption: finalCaption,
         mediaUrl: upload.mediaUrl,
         cloudinaryPublicId: upload.publicId,
         platforms: selectedPlatforms,
@@ -589,7 +607,7 @@ export default function DashboardClient({ initialPosts, initialStats, databaseAv
         <MobileNavItem href="#top" label="الرئيسية" icon={LayoutDashboard} active />
         <MobileNavItem href="#history" label="المنشورات" icon={CalendarDays} />
         <MobileNavItem href="#platforms" label="القنوات" icon={Send} />
-        <MobileNavItem href="#" label="الإعدادات" icon={Settings2} />
+        <MobileNavItem href="/settings" label="الإعدادات" icon={Settings2} />
       </nav>
 
       {mobileMenuOpen ? (
@@ -603,6 +621,7 @@ export default function DashboardClient({ initialPosts, initialStats, databaseAv
               <MobileDrawerLink href="#top" label="نظرة عامة" icon={LayoutDashboard} onClick={() => setMobileMenuOpen(false)} />
               <MobileDrawerLink href="#history" label="المنشورات" icon={CalendarDays} onClick={() => setMobileMenuOpen(false)} />
               <MobileDrawerLink href="#platforms" label="قنوات النشر" icon={Send} onClick={() => setMobileMenuOpen(false)} />
+              <MobileDrawerLink href="/settings" label="الإعدادات" icon={Settings2} onClick={() => setMobileMenuOpen(false)} />
             </div>
             <p className="mt-auto text-center text-[10px] text-[#a2a39b]">صُنع بكل حب في بيت ورد ♥</p>
           </nav>
