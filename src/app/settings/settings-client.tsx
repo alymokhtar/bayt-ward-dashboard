@@ -53,6 +53,7 @@ const SETTINGS_SECTIONS = [
 
 export default function SettingsClient({ cloudinaryConfigured }: SettingsClientProps) {
   const [settings, setSettings] = useState<SavedSettings>(DEFAULT_SETTINGS);
+  const [settingsLoaded, setSettingsLoaded] = useState(false);
   const [facebookAccessToken, setFacebookAccessToken] = useState("");
   const [showAccessToken, setShowAccessToken] = useState(false);
   const [toast, setToast] = useState("");
@@ -62,18 +63,23 @@ export default function SettingsClient({ cloudinaryConfigured }: SettingsClientP
     try {
       const saved = window.localStorage.getItem(STORAGE_KEY);
       if (saved) {
-        const parsed = JSON.parse(saved) as Partial<SavedSettings>;
+        const parsed: unknown = JSON.parse(saved);
+        const values = parsed && typeof parsed === "object" ? parsed as Partial<SavedSettings> : {};
         window.setTimeout(() => {
           setSettings({
-            storeName: parsed.storeName || DEFAULT_SETTINGS.storeName,
-            hashtags: parsed.hashtags || DEFAULT_SETTINGS.hashtags,
-            facebookPageId: parsed.facebookPageId || "",
-            instagramAccountId: parsed.instagramAccountId || "",
+            storeName: typeof values.storeName === "string" ? values.storeName : DEFAULT_SETTINGS.storeName,
+            hashtags: typeof values.hashtags === "string" ? values.hashtags : DEFAULT_SETTINGS.hashtags,
+            facebookPageId: typeof values.facebookPageId === "string" ? values.facebookPageId : "",
+            instagramAccountId: typeof values.instagramAccountId === "string" ? values.instagramAccountId : "",
           });
+          setSettingsLoaded(true);
         }, 0);
+      } else {
+        window.setTimeout(() => setSettingsLoaded(true), 0);
       }
     } catch {
       // Ignore unavailable or malformed local settings and use safe defaults.
+      window.setTimeout(() => setSettingsLoaded(true), 0);
     }
 
     return () => {
@@ -168,7 +174,8 @@ export default function SettingsClient({ cloudinaryConfigured }: SettingsClientP
               ))}
             </div>
 
-            <form onSubmit={saveSettings} className="space-y-5">
+            <form onSubmit={saveSettings}>
+              <fieldset disabled={!settingsLoaded} className="min-w-0 space-y-5 disabled:opacity-70">
               <section id="store" className="scroll-mt-24 overflow-hidden rounded-[22px] border border-[#ece9e2] bg-white shadow-[0_4px_24px_rgba(42,53,44,0.035)]">
                 <SectionHeading icon={Store} title="إعدادات المتجر العامة" description="المعلومات التي تظهر في لوحة التسويق ومحتواك." />
                 <div className="grid gap-5 px-5 py-5 sm:grid-cols-2 sm:px-7 sm:py-6">
@@ -263,10 +270,12 @@ export default function SettingsClient({ cloudinaryConfigured }: SettingsClientP
 
               <div className="sticky bottom-3 z-10 flex flex-col-reverse gap-3 rounded-2xl border border-[#ece9e2] bg-white/95 p-3 shadow-[0_8px_30px_rgba(42,53,44,0.08)] backdrop-blur-xl sm:static sm:flex-row sm:items-center sm:justify-between sm:border-0 sm:bg-transparent sm:p-0 sm:shadow-none">
                 <p className="hidden text-[11px] text-[#969990] sm:block">تُحفظ إعدادات المتجر ومعرّفات الحساب في هذا المتصفح.</p>
-                <button type="submit" className="inline-flex min-h-11 items-center justify-center gap-2 rounded-xl bg-[#205c4e] px-5 py-3 text-sm font-bold text-white shadow-[0_5px_12px_rgba(32,92,78,0.16)] transition hover:bg-[#184d41]">
-                  <Save size={16} /> حفظ التغييرات
+                <button type="submit" disabled={!settingsLoaded} className="inline-flex min-h-11 items-center justify-center gap-2 rounded-xl bg-[#205c4e] px-5 py-3 text-sm font-bold text-white shadow-[0_5px_12px_rgba(32,92,78,0.16)] transition hover:bg-[#184d41] disabled:cursor-wait disabled:opacity-60">
+                  {!settingsLoaded ? <span className="size-4 animate-spin rounded-full border-2 border-white/40 border-t-white" /> : <Save size={16} />}
+                  {settingsLoaded ? "حفظ التغييرات" : "جار تحميل الإعدادات..."}
                 </button>
               </div>
+              </fieldset>
             </form>
           </div>
         </div>

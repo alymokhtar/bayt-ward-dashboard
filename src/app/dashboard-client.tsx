@@ -26,11 +26,14 @@ import {
   Send,
   Settings2,
   Sparkles,
+  Trash2,
   UploadCloud,
   Video,
   X,
 } from "lucide-react";
 import { createPost, type SavedPost } from "@/app/actions/create-post";
+import { cleanupFailedUpload } from "@/app/actions/cleanup-upload";
+import { deletePost } from "@/app/actions/delete-post";
 import { uploadMedia } from "@/app/actions/upload-media";
 
 type DashboardStats = {
@@ -88,11 +91,11 @@ function PlatformMark({ platform }: { platform: (typeof PLATFORMS)[number] }) {
   );
 }
 
-function Sidebar() {
+function Sidebar({ storeName }: { storeName: string }) {
   const navItems = [
-    { label: "نظرة عامة", icon: LayoutDashboard, active: true },
-    { label: "المنشورات", icon: CalendarDays, active: false },
-    { label: "مكتبة الوسائط", icon: FolderOpen, active: false },
+    { label: "نظرة عامة", icon: LayoutDashboard, href: "/", active: true },
+    { label: "المنشورات", icon: CalendarDays, href: "/posts", active: false },
+    { label: "مكتبة الوسائط", icon: FolderOpen, href: "/media", active: false },
   ];
 
   return (
@@ -100,17 +103,17 @@ function Sidebar() {
       <div className="flex items-center gap-3 px-2">
         <BrandMark />
         <div>
-          <p className="text-[17px] font-bold tracking-tight text-[#233b34]">بيت ورد</p>
+          <p className="text-[17px] font-bold tracking-tight text-[#233b34]">{storeName}</p>
           <p className="mt-0.5 text-xs text-[#92918b]">لوحة التسويق</p>
         </div>
       </div>
 
       <div className="mt-10 px-3 text-[10px] font-bold tracking-[0.16em] text-[#a8a49b]">القائمة الرئيسية</div>
       <nav className="mt-3 space-y-1" aria-label="القائمة الرئيسية">
-        {navItems.map(({ label, icon: Icon, active }) => (
+        {navItems.map(({ label, icon: Icon, href, active }) => (
           <a
             key={label}
-            href="#"
+            href={href}
             aria-current={active ? "page" : undefined}
             className={`flex items-center gap-3 rounded-xl px-3.5 py-3 text-sm font-medium transition ${active ? "bg-[#edf4ef] text-[#17594c]" : "text-[#777b75] hover:bg-[#f7f6f2] hover:text-[#24483e]"}`}
           >
@@ -125,7 +128,7 @@ function Sidebar() {
 
       <div className="mt-9 px-3 text-[10px] font-bold tracking-[0.16em] text-[#a8a49b]">إعدادات المتجر</div>
       <nav className="mt-3 space-y-1" aria-label="إعدادات المتجر">
-        <a href="#platforms" className="flex items-center gap-3 rounded-xl px-3.5 py-3 text-sm font-medium text-[#777b75] transition hover:bg-[#f7f6f2] hover:text-[#24483e]">
+        <a href="/channels" className="flex items-center gap-3 rounded-xl px-3.5 py-3 text-sm font-medium text-[#777b75] transition hover:bg-[#f7f6f2] hover:text-[#24483e]">
           <Send size={18} strokeWidth={1.8} />
           <span>قنوات النشر</span>
         </a>
@@ -149,7 +152,7 @@ function Sidebar() {
       <div className="mt-5 flex items-center gap-3 border-t border-[#f0ede7] px-1 pt-5">
         <div className="grid size-10 place-items-center rounded-full bg-[#f1e4da] text-sm font-bold text-[#785b48]">ب</div>
         <div className="min-w-0 flex-1">
-          <p className="truncate text-sm font-semibold text-[#343c36]">فريق بيت ورد</p>
+          <p className="truncate text-sm font-semibold text-[#343c36]">فريق {storeName}</p>
           <p className="mt-0.5 text-[11px] text-[#96958f]">مدير المتجر</p>
         </div>
         <MoreHorizontal size={18} className="text-[#93948e]" />
@@ -173,7 +176,15 @@ function StatusPill({ status }: { status: SavedPost["status"] }) {
   );
 }
 
-function HistorySection({ posts, databaseAvailable }: { posts: SavedPost[]; databaseAvailable: boolean }) {
+function HistorySection({ posts, databaseAvailable, searchTerm, onDelete, deletingPostId, actionError, actionNotice }: {
+  posts: SavedPost[];
+  databaseAvailable: boolean;
+  searchTerm: string;
+  onDelete: (post: SavedPost) => void;
+  deletingPostId: string | null;
+  actionError: string;
+  actionNotice: string;
+}) {
   return (
     <section id="history" className="mt-7 overflow-hidden rounded-[22px] border border-[#ece9e2] bg-white shadow-[0_4px_24px_rgba(42,53,44,0.035)]">
       <div className="flex flex-wrap items-center justify-between gap-3 border-b border-[#f1eee8] px-5 py-5 sm:px-7">
@@ -184,10 +195,13 @@ function HistorySection({ posts, databaseAvailable }: { posts: SavedPost[]; data
           </div>
           <p className="mt-1.5 text-xs text-[#95958e]">تابعي حالة محتواك من مكان واحد</p>
         </div>
-        <a href="#history" className="inline-flex items-center gap-1.5 text-xs font-semibold text-[#286355] hover:text-[#174f45]">
+        <a href="/posts" className="inline-flex items-center gap-1.5 text-xs font-semibold text-[#286355] hover:text-[#174f45]">
           عرض الكل <ArrowUpLeft size={14} />
         </a>
       </div>
+
+      {actionError ? <div role="alert" className="mx-5 mt-4 rounded-xl border border-[#f0d4cc] bg-[#fff5f2] px-4 py-3 text-xs leading-6 text-[#a44f46] sm:mx-7">{actionError}</div> : null}
+      {actionNotice ? <div role="status" className="mx-5 mt-4 rounded-xl border border-[#d6e8d8] bg-[#f1f8f1] px-4 py-3 text-xs leading-6 text-[#34704f] sm:mx-7">{actionNotice}</div> : null}
 
       {!databaseAvailable ? (
         <div className="m-5 rounded-xl border border-[#f3d9b5] bg-[#fff8ed] p-4 text-sm text-[#946b32]">
@@ -196,8 +210,8 @@ function HistorySection({ posts, databaseAvailable }: { posts: SavedPost[]; data
       ) : posts.length === 0 ? (
         <div className="flex flex-col items-center px-6 py-12 text-center">
           <span className="grid size-14 place-items-center rounded-2xl bg-[#f4f6f1] text-[#638170]"><FolderOpen size={24} /></span>
-          <p className="mt-4 text-sm font-semibold text-[#4b544c]">لا توجد منشورات بعد</p>
-          <p className="mt-1.5 max-w-xs text-xs leading-6 text-[#92948d]">أضيفي أول منشورك وسيظهر هنا مع حالته والمنصات المختارة.</p>
+          <p className="mt-4 text-sm font-semibold text-[#4b544c]">{searchTerm ? "ما لقينا منشورات مطابقة" : "لا توجد منشورات بعد"}</p>
+          <p className="mt-1.5 max-w-xs text-xs leading-6 text-[#92948d]">{searchTerm ? "جرّبي كلمات بحث مختلفة." : "أضيفي أول منشورك وسيظهر هنا مع حالته والمنصات المختارة."}</p>
         </div>
       ) : (
         <div className="divide-y divide-[#f3f1ec]">
@@ -220,7 +234,16 @@ function HistorySection({ posts, databaseAvailable }: { posts: SavedPost[]; data
                 </div>
                 <div className="col-span-2 flex items-center justify-between gap-3 pr-[68px] sm:col-span-1 sm:justify-end sm:pr-0">
                   <StatusPill status={post.status} />
-                  <button type="button" aria-label="خيارات المنشور" className="rounded-lg p-1.5 text-[#92948d] hover:bg-[#f6f5f1]"><MoreHorizontal size={18} /></button>
+                  <button
+                    type="button"
+                    aria-label={`حذف المنشور: ${post.caption.slice(0, 40)}`}
+                    title="حذف المنشور"
+                    disabled={deletingPostId === post.id}
+                    onClick={() => onDelete(post)}
+                    className="rounded-lg p-1.5 text-[#92948d] transition hover:bg-[#fff1ef] hover:text-[#b4534c] disabled:cursor-wait disabled:opacity-50"
+                  >
+                    {deletingPostId === post.id ? <LoaderCircle size={17} className="animate-spin" /> : <Trash2 size={17} />}
+                  </button>
                 </div>
               </article>
             );
@@ -233,6 +256,7 @@ function HistorySection({ posts, databaseAvailable }: { posts: SavedPost[]; data
 
 export default function DashboardClient({ initialPosts, initialStats, databaseAvailable }: DashboardClientProps) {
   const [posts, setPosts] = useState(initialPosts);
+  const [storeName, setStoreName] = useState("بيت ورد");
   const [stats, setStats] = useState(initialStats);
   const [selectedFile, setSelectedFile] = useState<File | null>(null);
   const [caption, setCaption] = useState("");
@@ -243,12 +267,90 @@ export default function DashboardClient({ initialPosts, initialStats, databaseAv
   const [notice, setNotice] = useState("");
   const [previewUrl, setPreviewUrl] = useState("");
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
+  const [notificationsOpen, setNotificationsOpen] = useState(false);
+  const [accountMenuOpen, setAccountMenuOpen] = useState(false);
+  const [searchTerm, setSearchTerm] = useState("");
+  const [deletingPostId, setDeletingPostId] = useState<string | null>(null);
+  const [historyError, setHistoryError] = useState("");
+  const [historyNotice, setHistoryNotice] = useState("");
   const inputRef = useRef<HTMLInputElement>(null);
+  const searchInputRef = useRef<HTMLInputElement>(null);
   const objectUrlRef = useRef<string | null>(null);
+
+  const filteredPosts = posts.filter((post) =>
+    `${post.caption} ${post.platforms.join(" ")}`.toLocaleLowerCase("ar").includes(searchTerm.trim().toLocaleLowerCase("ar")),
+  );
 
   useEffect(() => () => {
     if (objectUrlRef.current) URL.revokeObjectURL(objectUrlRef.current);
   }, []);
+
+  useEffect(() => {
+    try {
+      const saved = window.localStorage.getItem("bayt-ward-dashboard-settings-v1");
+      const parsed: unknown = saved ? JSON.parse(saved) : null;
+      const savedStoreName = parsed && typeof parsed === "object" && "storeName" in parsed
+        ? parsed.storeName
+        : null;
+      if (typeof savedStoreName === "string" && savedStoreName.trim()) {
+        window.setTimeout(() => setStoreName(savedStoreName.trim()), 0);
+      }
+    } catch {
+      // Keep the default brand name when browser settings are unavailable or malformed.
+    }
+  }, []);
+
+  useEffect(() => {
+    if (!mobileMenuOpen) return;
+    const closeOnEscape = (event: KeyboardEvent) => {
+      if (event.key === "Escape") setMobileMenuOpen(false);
+    };
+    window.addEventListener("keydown", closeOnEscape);
+    return () => window.removeEventListener("keydown", closeOnEscape);
+  }, [mobileMenuOpen]);
+
+  useEffect(() => {
+    const focusSearch = (event: KeyboardEvent) => {
+      if ((event.ctrlKey || event.metaKey) && event.key.toLowerCase() === "k") {
+        event.preventDefault();
+        searchInputRef.current?.focus();
+      }
+    };
+    window.addEventListener("keydown", focusSearch);
+    return () => window.removeEventListener("keydown", focusSearch);
+  }, []);
+
+  async function handleDeletePost(post: SavedPost) {
+    if (!window.confirm("هل أنتِ متأكدة من حذف هذا المنشور ووسائطه؟ لا يمكن التراجع عن الحذف.")) return;
+
+    setDeletingPostId(post.id);
+    setError("");
+    setNotice("");
+    setHistoryError("");
+    setHistoryNotice("");
+    try {
+      const result = await deletePost(post.id);
+      if (!result.success) {
+        setHistoryError(result.error);
+        return;
+      }
+
+      setPosts((current) => current.filter((item) => item.id !== post.id));
+      setStats((current) => ({
+        ...current,
+        total: Math.max(0, current.total - 1),
+        pending: post.status === "PENDING" ? Math.max(0, current.pending - 1) : current.pending,
+        published: post.status === "PUBLISHED" ? Math.max(0, current.published - 1) : current.published,
+      }));
+      setHistoryNotice(result.cloudinaryCleanupPending
+        ? "حُذف المنشور، لكن تعذّر تنظيف إحدى الوسائط من Cloudinary."
+        : "تم حذف المنشور ووسائطه بنجاح.");
+    } catch {
+      setHistoryError("تعذّر حذف المنشور. تحققي من الاتصال ثم حاولي مرة أخرى.");
+    } finally {
+      setDeletingPostId(null);
+    }
+  }
 
   function clearSelectedFile() {
     if (objectUrlRef.current) URL.revokeObjectURL(objectUrlRef.current);
@@ -328,6 +430,13 @@ export default function DashboardClient({ initialPosts, initialStats, databaseAv
         // Publishing continues with the entered caption if saved settings cannot be read.
       }
 
+      if (finalCaption.length > 2200) {
+        const cleanedUp = await cleanupFailedUpload(upload.publicId, upload.mediaUrl);
+        setError("نص المنشور مع الوسوم الافتراضية يتجاوز الحد الأقصى 2200 حرف. اختصري النص أو الوسوم.");
+        if (!cleanedUp) setError((message) => `${message} وتعذّر تنظيف الملف المرفوع من Cloudinary.`);
+        return;
+      }
+
       const result = await createPost({
         caption: finalCaption,
         mediaUrl: upload.mediaUrl,
@@ -336,7 +445,10 @@ export default function DashboardClient({ initialPosts, initialStats, databaseAv
       });
 
       if (!result.success) {
-        setError(result.error);
+        const cleanedUp = await cleanupFailedUpload(upload.publicId, upload.mediaUrl);
+        setError(cleanedUp
+          ? result.error
+          : `${result.error} تعذّر تنظيف الملف المرفوع من التخزين السحابي.`);
         return;
       }
 
@@ -355,7 +467,7 @@ export default function DashboardClient({ initialPosts, initialStats, databaseAv
   return (
     <div id="top" className="min-h-screen bg-[#f7f7f4] text-[#283630]">
       <div className="mx-auto flex min-h-screen max-w-[1600px]">
-        <Sidebar />
+        <Sidebar storeName={storeName} />
 
         <main className="min-w-0 flex-1 pb-24 lg:pb-8">
           <header className="sticky top-0 z-20 border-b border-[#ece9e2]/90 bg-[#f7f7f4]/90 px-4 py-3 backdrop-blur-xl sm:px-7 lg:px-9">
@@ -367,7 +479,7 @@ export default function DashboardClient({ initialPosts, initialStats, databaseAv
                 <div className="lg:hidden"><BrandMark small /></div>
                 <div className="hidden sm:block">
                   <p className="text-xs text-[#92958d]">{new Intl.DateTimeFormat("ar", { weekday: "long", day: "numeric", month: "long", year: "numeric" }).format(new Date())}</p>
-                  <h1 className="mt-0.5 text-lg font-bold text-[#26382f]">مساء الورد، فريق بيت ورد 🌿</h1>
+                  <h1 className="mt-0.5 text-lg font-bold text-[#26382f]">مساء الورد، فريق {storeName} 🌿</h1>
                 </div>
                 <h1 className="text-sm font-bold text-[#26382f] sm:hidden">لوحة التسويق</h1>
               </div>
@@ -375,17 +487,23 @@ export default function DashboardClient({ initialPosts, initialStats, databaseAv
               <div className="flex items-center gap-2.5">
                 <label className="hidden h-10 w-52 items-center gap-2 rounded-xl border border-[#ece9e2] bg-white px-3 text-[#969890] md:flex">
                   <Search size={16} />
-                  <input className="min-w-0 flex-1 bg-transparent text-xs text-[#48534b] outline-none placeholder:text-[#a5a69f]" placeholder="ابحثي في المنشورات" aria-label="البحث في المنشورات" />
+                  <input ref={searchInputRef} value={searchTerm} onChange={(event) => setSearchTerm(event.target.value)} onKeyDown={(event) => { if (event.key === "Enter") document.getElementById("history")?.scrollIntoView({ behavior: "smooth" }); }} className="min-w-0 flex-1 bg-transparent text-xs text-[#48534b] outline-none placeholder:text-[#a5a69f]" placeholder="ابحثي في المنشورات" aria-label="البحث في المنشورات" />
                   <kbd className="rounded border border-[#eeece7] px-1.5 py-0.5 text-[10px]">⌘ K</kbd>
                 </label>
-                <button type="button" className="relative grid size-10 place-items-center rounded-xl border border-[#ece9e2] bg-white text-[#68726a] hover:bg-[#faf9f6]" aria-label="الإشعارات">
+                <div className="relative">
+                <button type="button" onClick={() => { setNotificationsOpen((open) => !open); setAccountMenuOpen(false); }} className="relative grid size-10 place-items-center rounded-xl border border-[#ece9e2] bg-white text-[#68726a] hover:bg-[#faf9f6]" aria-label="الإشعارات" aria-expanded={notificationsOpen}>
                   <Bell size={17} />
-                  <span className="absolute right-2 top-2 size-1.5 rounded-full bg-[#d28270]" />
+                  {stats.pending > 0 ? <span className="absolute -left-1 -top-1 grid min-h-4 min-w-4 place-items-center rounded-full bg-[#c47869] px-1 text-[9px] font-bold text-white">{stats.pending > 9 ? "9+" : stats.pending}</span> : null}
                 </button>
-                <button type="button" className="flex items-center gap-2 rounded-xl border border-[#ece9e2] bg-white py-1.5 pl-2 pr-1.5">
+                {notificationsOpen ? <div className="absolute left-0 top-12 z-40 w-64 rounded-2xl border border-[#ece9e2] bg-white p-4 text-right shadow-xl"><p className="text-xs font-bold text-[#39463d]">التنبيهات</p><p className="mt-2 text-xs leading-6 text-[#858a82]">{stats.pending ? `لديك ${stats.pending} منشور بانتظار النشر.` : "لا توجد تنبيهات جديدة."}</p><a href="#history" onClick={() => setNotificationsOpen(false)} className="mt-3 inline-flex text-[11px] font-semibold text-[#286355]">عرض سجل المنشورات</a></div> : null}
+                </div>
+                <div className="relative">
+                <button type="button" onClick={() => { setAccountMenuOpen((open) => !open); setNotificationsOpen(false); }} className="flex items-center gap-2 rounded-xl border border-[#ece9e2] bg-white py-1.5 pl-2 pr-1.5" aria-label="قائمة الحساب" aria-expanded={accountMenuOpen}>
                   <span className="grid size-7 place-items-center rounded-lg bg-[#f1e4da] text-xs font-bold text-[#785b48]">ب</span>
                   <ChevronDown size={14} className="text-[#989991]" />
                 </button>
+                {accountMenuOpen ? <div className="absolute left-0 top-12 z-40 w-52 rounded-2xl border border-[#ece9e2] bg-white p-2 text-right shadow-xl"><div className="border-b border-[#f0ede7] px-3 py-2"><p className="text-xs font-semibold text-[#39463d]">فريق {storeName}</p><p className="mt-1 text-[10px] text-[#96958f]">مدير المتجر</p></div><a href="/settings" onClick={() => setAccountMenuOpen(false)} className="mt-1 flex items-center gap-2 rounded-lg px-3 py-2.5 text-xs font-medium text-[#68726a] hover:bg-[#f7f6f2]"><Settings2 size={15} /> إعدادات المتجر</a></div> : null}
+                </div>
               </div>
             </div>
           </header>
@@ -422,7 +540,6 @@ export default function DashboardClient({ initialPosts, initialStats, databaseAv
                       <p className="mt-1 text-[11px] text-[#989991]">خطوة واحدة لمشاركة لحظاتك الجميلة</p>
                     </div>
                   </div>
-                  <button type="button" className="rounded-lg p-2 text-[#94958d] transition hover:bg-[#f7f6f2]" aria-label="المزيد من الخيارات"><MoreHorizontal size={20} /></button>
                 </div>
 
                 <form onSubmit={handleSubmit} className="space-y-6 px-5 py-5 sm:px-7 sm:py-6">
@@ -597,7 +714,7 @@ export default function DashboardClient({ initialPosts, initialStats, databaseAv
               </aside>
             </div>
 
-            <HistorySection posts={posts} databaseAvailable={databaseAvailable} />
+            <HistorySection posts={filteredPosts} databaseAvailable={databaseAvailable} searchTerm={searchTerm} onDelete={handleDeletePost} deletingPostId={deletingPostId} actionError={historyError} actionNotice={historyNotice} />
             <footer className="px-1 py-7 text-center text-[10px] text-[#a2a39b]">صُنع بكل حب في بيت ورد <span className="text-[#c47f78]">♥</span></footer>
           </div>
         </main>
@@ -605,8 +722,8 @@ export default function DashboardClient({ initialPosts, initialStats, databaseAv
 
       <nav className="fixed inset-x-0 bottom-0 z-30 grid grid-cols-4 border-t border-[#ece9e2] bg-white/95 px-2 pb-[env(safe-area-inset-bottom)] pt-2 backdrop-blur-xl lg:hidden" aria-label="التنقل">
         <MobileNavItem href="#top" label="الرئيسية" icon={LayoutDashboard} active />
-        <MobileNavItem href="#history" label="المنشورات" icon={CalendarDays} />
-        <MobileNavItem href="#platforms" label="القنوات" icon={Send} />
+        <MobileNavItem href="/posts" label="المنشورات" icon={CalendarDays} />
+        <MobileNavItem href="/channels" label="القنوات" icon={Send} />
         <MobileNavItem href="/settings" label="الإعدادات" icon={Settings2} />
       </nav>
 
@@ -614,13 +731,14 @@ export default function DashboardClient({ initialPosts, initialStats, databaseAv
         <div className="fixed inset-0 z-40 bg-[#26352d]/25 backdrop-blur-[2px] lg:hidden" onClick={() => setMobileMenuOpen(false)}>
           <nav role="dialog" aria-modal="true" aria-label="قائمة التنقل" className="absolute right-0 top-0 flex h-full w-[min(82vw,320px)] flex-col bg-white p-5 shadow-2xl" onClick={(event) => event.stopPropagation()}>
             <div className="flex items-center justify-between border-b border-[#f0ede7] pb-5">
-              <div className="flex items-center gap-3"><BrandMark small /><div><p className="text-sm font-bold text-[#233b34]">بيت ورد</p><p className="mt-1 text-[11px] text-[#92918b]">لوحة التسويق</p></div></div>
+              <div className="flex items-center gap-3"><BrandMark small /><div><p className="text-sm font-bold text-[#233b34]">{storeName}</p><p className="mt-1 text-[11px] text-[#92918b]">لوحة التسويق</p></div></div>
               <button type="button" onClick={() => setMobileMenuOpen(false)} className="rounded-lg p-2 text-[#777b75] hover:bg-[#f6f5f1]" aria-label="إغلاق القائمة"><X size={19} /></button>
             </div>
             <div className="mt-7 space-y-2">
               <MobileDrawerLink href="#top" label="نظرة عامة" icon={LayoutDashboard} onClick={() => setMobileMenuOpen(false)} />
-              <MobileDrawerLink href="#history" label="المنشورات" icon={CalendarDays} onClick={() => setMobileMenuOpen(false)} />
-              <MobileDrawerLink href="#platforms" label="قنوات النشر" icon={Send} onClick={() => setMobileMenuOpen(false)} />
+              <MobileDrawerLink href="/posts" label="المنشورات" icon={CalendarDays} onClick={() => setMobileMenuOpen(false)} />
+              <MobileDrawerLink href="/media" label="مكتبة الوسائط" icon={FolderOpen} onClick={() => setMobileMenuOpen(false)} />
+              <MobileDrawerLink href="/channels" label="قنوات النشر" icon={Send} onClick={() => setMobileMenuOpen(false)} />
               <MobileDrawerLink href="/settings" label="الإعدادات" icon={Settings2} onClick={() => setMobileMenuOpen(false)} />
             </div>
             <p className="mt-auto text-center text-[10px] text-[#a2a39b]">صُنع بكل حب في بيت ورد ♥</p>

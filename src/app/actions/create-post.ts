@@ -31,7 +31,7 @@ export async function createPost(input: CreatePostInput): Promise<CreatePostResu
   const cloudinaryPublicId =
     typeof input?.cloudinaryPublicId === "string" ? input.cloudinaryPublicId : "";
   const platforms = Array.isArray(input?.platforms)
-    ? [...new Set(input.platforms.filter((platform) => ALLOWED_PLATFORMS.has(platform)))]
+    ? [...new Set(input.platforms.filter((platform) => typeof platform === "string" && ALLOWED_PLATFORMS.has(platform)))]
     : [];
 
   if (!caption || caption.length > 2200) {
