@@ -37,6 +37,7 @@ import { createPost, type SavedPost } from "@/app/actions/create-post";
 import { cleanupFailedUpload } from "@/app/actions/cleanup-upload";
 import { deletePost } from "@/app/actions/delete-post";
 import { uploadMedia } from "@/app/actions/upload-media";
+import BrandMark from "@/components/brand-mark";
 
 type DashboardStats = {
   total: number;
@@ -75,17 +76,6 @@ function getServerThemeSnapshot() {
   return false;
 }
 
-function BrandMark({ small = false }: { small?: boolean }) {
-  return (
-    <span
-      className={`grid shrink-0 place-items-center rounded-2xl bg-[#174f45] text-[#fffaf4] shadow-sm ${small ? "size-10" : "size-12"}`}
-      aria-hidden="true"
-    >
-      <span className="font-serif text-2xl leading-none">و</span>
-    </span>
-  );
-}
-
 function PlatformMark({ platform }: { platform: (typeof PLATFORMS)[number] }) {
   const Icon = platform.icon;
 
@@ -116,7 +106,7 @@ function Sidebar({ storeName }: { storeName: string }) {
   return (
     <aside className="hidden min-h-screen w-[258px] shrink-0 flex-col border-l border-[#ece8e1] bg-white px-5 py-6 lg:flex">
       <div className="flex items-center gap-3 px-2">
-        <BrandMark />
+          <BrandMark />
         <div>
           <p className="text-[17px] font-bold tracking-tight text-[#233b34]">{storeName}</p>
           <p className="mt-0.5 text-xs text-[#92918b]">لوحة التسويق</p>
@@ -506,10 +496,10 @@ export default function DashboardClient({ initialPosts, initialStats, databaseAv
                 <button type="button" onClick={() => setMobileMenuOpen((open) => !open)} className="rounded-xl border border-[#eae7e0] bg-white p-2.5 text-[#56625a] lg:hidden" aria-label={mobileMenuOpen ? "إغلاق القائمة" : "فتح القائمة"} aria-expanded={mobileMenuOpen}>
                   {mobileMenuOpen ? <X size={19} /> : <Menu size={19} />}
                 </button>
-                <div className="lg:hidden"><BrandMark small /></div>
+                <div className="lg:hidden"><BrandMark size="size-10" /></div>
                 <div className="hidden sm:block">
                   <p className="text-xs text-[#92958d]">{new Intl.DateTimeFormat("ar", { weekday: "long", day: "numeric", month: "long", year: "numeric" }).format(new Date())}</p>
-                  <h1 className="mt-0.5 text-lg font-bold text-[#26382f]">مساء الورد، فريق {storeName} 🌿</h1>
+                  <h1 className="mt-0.5 flex items-center gap-1.5 text-lg font-bold text-[#26382f]">مساء الورد، فريق {storeName}<span className="hidden lg:inline-flex"><BrandMark size="size-10" /></span></h1>
                 </div>
                 <h1 className="text-sm font-bold text-[#26382f] sm:hidden">لوحة التسويق</h1>
               </div>
@@ -769,7 +759,7 @@ export default function DashboardClient({ initialPosts, initialStats, databaseAv
         <div className="fixed inset-0 z-40 bg-[#26352d]/25 backdrop-blur-[2px] lg:hidden" onClick={() => setMobileMenuOpen(false)}>
           <nav role="dialog" aria-modal="true" aria-label="قائمة التنقل" className="absolute right-0 top-0 flex h-full w-[min(82vw,320px)] flex-col bg-white p-5 shadow-2xl" onClick={(event) => event.stopPropagation()}>
             <div className="flex items-center justify-between border-b border-[#f0ede7] pb-5">
-              <div className="flex items-center gap-3"><BrandMark small /><div><p className="text-sm font-bold text-[#233b34]">{storeName}</p><p className="mt-1 text-[11px] text-[#92918b]">لوحة التسويق</p></div></div>
+              <div className="flex items-center gap-3"><BrandMark size="size-10" /><div><p className="text-sm font-bold text-[#233b34]">{storeName}</p><p className="mt-1 text-[11px] text-[#92918b]">لوحة التسويق</p></div></div>
               <button type="button" onClick={() => setMobileMenuOpen(false)} className="rounded-lg p-2 text-[#777b75] hover:bg-[#f6f5f1]" aria-label="إغلاق القائمة"><X size={19} /></button>
             </div>
             <div className="mt-7 space-y-2">

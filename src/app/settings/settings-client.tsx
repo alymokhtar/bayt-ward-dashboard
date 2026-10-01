@@ -2,6 +2,7 @@
 
 import Link from "next/link";
 import { useEffect, useRef, useState } from "react";
+import BrandMark from "@/components/brand-mark";
 import {
   ArrowRight,
   Camera,
@@ -152,7 +153,7 @@ export default function SettingsClient({ cloudinaryConfigured }: SettingsClientP
       <div className="mx-auto min-h-screen max-w-[1440px] lg:flex">
         <aside className="hidden w-[270px] shrink-0 flex-col border-l border-[#ece8e1] bg-white px-5 py-6 lg:flex">
           <Link href="/" className="flex items-center gap-3 px-2">
-            <BrandMark />
+            <BrandMark size="size-11" />
             <span>
               <span className="block text-[17px] font-bold tracking-tight text-[#233b34]">بيت ورد</span>
               <span className="mt-0.5 block text-xs text-[#92918b]">لوحة التسويق</span>
@@ -337,10 +338,6 @@ export default function SettingsClient({ cloudinaryConfigured }: SettingsClientP
 }
 
 const inputClass = "min-h-11 w-full rounded-xl border border-[#e9e8e1] bg-[#fdfdfb] px-3.5 py-2.5 text-sm text-[#3e4941] outline-none transition placeholder:text-[#b1b1a9] focus:border-[#a3bba7] focus:bg-white focus:ring-4 focus:ring-[#eaf1eb]";
-
-function BrandMark() {
-  return <span aria-hidden="true" className="grid size-11 shrink-0 place-items-center rounded-2xl bg-[#174f45] text-[#fffaf4] shadow-sm"><span className="font-serif text-2xl leading-none">و</span></span>;
-}
 
 function SectionHeading({
   icon: Icon,
