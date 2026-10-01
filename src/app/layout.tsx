@@ -1,6 +1,7 @@
 import type { Metadata, Viewport } from "next";
 import { Cairo } from "next/font/google";
 import "./globals.css";
+import ThemeInitializer from "./theme-initializer";
 
 const cairo = Cairo({
   subsets: ["arabic", "latin"],
@@ -33,7 +34,10 @@ export default function RootLayout({ children }: LayoutProps<"/">) {
       dir="rtl"
       className={`${cairo.variable} ${cairo.className} h-full antialiased`}
     >
-      <body className="min-h-full flex flex-col">{children}</body>
+      <body className="min-h-full flex flex-col">
+        <ThemeInitializer />
+        {children}
+      </body>
     </html>
   );
 }

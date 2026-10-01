@@ -1,4 +1,5 @@
 @import "tailwindcss";
+@custom-variant dark (&:where(.dark, .dark *));
 
 :root {
   --background: #f7f7f4;
@@ -16,4 +17,104 @@ body {
   background: var(--background);
   color: var(--foreground);
   font-family: var(--font-cairo), sans-serif;
+}
+
+.dark {
+  color-scheme: dark;
+  --background: #0f172a;
+  --foreground: #e2e8f0;
+}
+
+.dark [class*="bg-white"],
+.dark [class*="bg-[#fbfbf8]"],
+.dark [class*="bg-[#fdfdfb]"],
+.dark [class*="bg-[#f7f7f4]"],
+.dark [class*="bg-[#f7f6f2]"],
+.dark [class*="bg-[#f7f4ed]"],
+.dark [class*="bg-[#f6f4ef]"],
+.dark [class*="bg-[#f4f3ef]"],
+.dark [class*="bg-[#f8f8f4]"],
+.dark [class*="bg-[#fcfcf9]"],
+.dark [class*="bg-[#fbf9f3]"],
+.dark [class*="bg-[#f5f2e9]"] {
+  background-color: #1e293b !important;
+}
+
+.dark [class*="bg-[#f2f7f1]"],
+.dark [class*="bg-[#edf4ef]"] {
+  background-color: #17372f !important;
+}
+
+.dark [class*="border-[#ec"],
+.dark [class*="border-[#e9"],
+.dark [class*="border-[#ee"],
+.dark [class*="border-[#f0"],
+.dark [class*="border-[#f1"],
+.dark [class*="border-[#dcded"],
+.dark [class*="border-[#e8e8"] {
+  border-color: #334155 !important;
+}
+
+.dark [class*="text-[#233b34]"],
+.dark [class*="text-[#26382f]"],
+.dark [class*="text-[#273a31]"],
+.dark [class*="text-[#2a3b32]"],
+.dark [class*="text-[#2c3730]"],
+.dark [class*="text-[#2c3d33]"],
+.dark [class*="text-[#2d3a32]"],
+.dark [class*="text-[#343c36]"],
+.dark [class*="text-[#364239]"],
+.dark [class*="text-[#39423b]"],
+.dark [class*="text-[#39463d]"],
+.dark [class*="text-[#3b463f]"],
+.dark [class*="text-[#3e4941]"],
+.dark [class*="text-[#44564a]"],
+.dark [class*="text-[#455047]"],
+.dark [class*="text-[#465148]"],
+.dark [class*="text-[#47554b]"],
+.dark [class*="text-[#48534b]"],
+.dark [class*="text-[#53645a]"],
+.dark [class*="text-[#56625a]"],
+.dark [class*="text-[#58625a]"],
+.dark [class*="text-[#59635b]"],
+.dark [class*="text-[#627066]"],
+.dark [class*="text-[#68726a]"],
+.dark [class*="text-[#6d766e]"],
+.dark [class*="text-[#737a72]"],
+.dark [class*="text-[#777b75]"],
+.dark [class*="text-[#817a68]"],
+.dark [class*="text-[#858075]"],
+.dark [class*="text-[#85867e]"],
+.dark [class*="text-[#858a82]"],
+.dark [class*="text-[#8b9188]"],
+.dark [class*="text-[#8e9189]"],
+.dark [class*="text-[#8e928a]"],
+.dark [class*="text-[#92918b]"],
+.dark [class*="text-[#92948d]"],
+.dark [class*="text-[#92958d]"],
+.dark [class*="text-[#93948e]"],
+.dark [class*="text-[#93968e]"],
+.dark [class*="text-[#95958e]"],
+.dark [class*="text-[#96958f]"],
+.dark [class*="text-[#969890]"],
+.dark [class*="text-[#989991]"],
+.dark [class*="text-[#989b93]"],
+.dark [class*="text-[#999b93]"],
+.dark [class*="text-[#9a9b94]"],
+.dark [class*="text-[#9a9c94]"],
+.dark [class*="text-[#9b9c95]"],
+.dark [class*="text-[#9b9d95]"],
+.dark [class*="text-[#9f9b93]"],
+.dark [class*="text-[#a0a199]"],
+.dark [class*="text-[#a2a39b]"],
+.dark [class*="text-[#a3a49d]"],
+.dark [class*="text-[#a5a69f]"],
+.dark [class*="text-[#aaa69d]"],
+.dark [class*="text-[#adaea7]"],
+.dark [class*="text-[#b1b1a9]"] {
+  color: #cbd5e1 !important;
+}
+
+.dark [class*="placeholder:text-[#"]::placeholder {
+  color: #64748b;
 }

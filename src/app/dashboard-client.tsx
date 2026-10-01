@@ -1,7 +1,7 @@
 "use client";
 
 import Image from "next/image";
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useRef, useState, useSyncExternalStore } from "react";
 import {
   ArrowDownLeft,
   ArrowUpLeft,
@@ -26,10 +26,12 @@ import {
   Send,
   Settings2,
   Sparkles,
+  Sun,
   Trash2,
   UploadCloud,
   Video,
   X,
+  Moon,
 } from "lucide-react";
 import { createPost, type SavedPost } from "@/app/actions/create-post";
 import { cleanupFailedUpload } from "@/app/actions/cleanup-upload";
@@ -59,6 +61,19 @@ const STATUS_LABELS: Record<SavedPost["status"], string> = {
   PUBLISHED: "تم النشر",
   FAILED: "تعذّر النشر",
 };
+
+function subscribeToTheme(onChange: () => void) {
+  window.addEventListener("bayt-ward-theme-change", onChange);
+  return () => window.removeEventListener("bayt-ward-theme-change", onChange);
+}
+
+function getThemeSnapshot() {
+  return document.documentElement.classList.contains("dark");
+}
+
+function getServerThemeSnapshot() {
+  return false;
+}
 
 function BrandMark({ small = false }: { small?: boolean }) {
   return (
@@ -273,6 +288,7 @@ export default function DashboardClient({ initialPosts, initialStats, databaseAv
   const [deletingPostId, setDeletingPostId] = useState<string | null>(null);
   const [historyError, setHistoryError] = useState("");
   const [historyNotice, setHistoryNotice] = useState("");
+  const isDarkMode = useSyncExternalStore(subscribeToTheme, getThemeSnapshot, getServerThemeSnapshot);
   const inputRef = useRef<HTMLInputElement>(null);
   const searchInputRef = useRef<HTMLInputElement>(null);
   const objectUrlRef = useRef<string | null>(null);
@@ -284,6 +300,17 @@ export default function DashboardClient({ initialPosts, initialStats, databaseAv
   useEffect(() => () => {
     if (objectUrlRef.current) URL.revokeObjectURL(objectUrlRef.current);
   }, []);
+
+  function toggleTheme() {
+    const nextDarkMode = !document.documentElement.classList.contains("dark");
+    document.documentElement.classList.toggle("dark", nextDarkMode);
+    window.dispatchEvent(new Event("bayt-ward-theme-change"));
+    try {
+      window.localStorage.setItem("bayt-ward-theme", nextDarkMode ? "dark" : "light");
+    } catch {
+      // The in-memory theme still works when browser storage is unavailable.
+    }
+  }
 
   useEffect(() => {
     const controller = new AbortController();
@@ -488,6 +515,15 @@ export default function DashboardClient({ initialPosts, initialStats, databaseAv
               </div>
 
               <div className="flex items-center gap-2.5">
+                <button
+                  type="button"
+                  onClick={toggleTheme}
+                  className="grid size-10 place-items-center rounded-xl border border-[#ece9e2] bg-white text-[#68726a] transition hover:bg-[#faf9f6]"
+                  aria-label={isDarkMode ? "التبديل إلى الوضع الفاتح" : "التبديل إلى الوضع الداكن"}
+                  title={isDarkMode ? "الوضع الفاتح" : "الوضع الداكن"}
+                >
+                  {isDarkMode ? <Sun size={17} /> : <Moon size={17} />}
+                </button>
                 <label className="hidden h-10 w-52 items-center gap-2 rounded-xl border border-[#ece9e2] bg-white px-3 text-[#969890] md:flex">
                   <Search size={16} />
                   <input ref={searchInputRef} value={searchTerm} onChange={(event) => setSearchTerm(event.target.value)} onKeyDown={(event) => { if (event.key === "Enter") document.getElementById("history")?.scrollIntoView({ behavior: "smooth" }); }} className="min-w-0 flex-1 bg-transparent text-xs text-[#48534b] outline-none placeholder:text-[#a5a69f]" placeholder="ابحثي في المنشورات" aria-label="البحث في المنشورات" />
@@ -501,8 +537,7 @@ export default function DashboardClient({ initialPosts, initialStats, databaseAv
                 {notificationsOpen ? <div className="absolute left-0 top-12 z-40 w-64 rounded-2xl border border-[#ece9e2] bg-white p-4 text-right shadow-xl"><p className="text-xs font-bold text-[#39463d]">التنبيهات</p><p className="mt-2 text-xs leading-6 text-[#858a82]">{stats.pending ? `لديك ${stats.pending} منشور بانتظار النشر.` : "لا توجد تنبيهات جديدة."}</p><a href="#history" onClick={() => setNotificationsOpen(false)} className="mt-3 inline-flex text-[11px] font-semibold text-[#286355]">عرض سجل المنشورات</a></div> : null}
                 </div>
                 <div className="relative">
-                <button type="button" onClick={() => { setAccountMenuOpen((open) => !open); setNotificationsOpen(false); }} className="flex items-center gap-2 rounded-xl border border-[#ece9e2] bg-white py-1.5 pl-2 pr-1.5" aria-label="قائمة الحساب" aria-expanded={accountMenuOpen}>
-                  <span className="grid size-7 place-items-center rounded-lg bg-[#f1e4da] text-xs font-bold text-[#785b48]">ب</span>
+                <button type="button" onClick={() => { setAccountMenuOpen((open) => !open); setNotificationsOpen(false); }} className="grid size-10 place-items-center rounded-xl border border-[#ece9e2] bg-white text-[#68726a]" aria-label="قائمة الحساب" aria-expanded={accountMenuOpen}>
                   <ChevronDown size={14} className="text-[#989991]" />
                 </button>
                 {accountMenuOpen ? <div className="absolute left-0 top-12 z-40 w-52 rounded-2xl border border-[#ece9e2] bg-white p-2 text-right shadow-xl"><div className="border-b border-[#f0ede7] px-3 py-2"><p className="text-xs font-semibold text-[#39463d]">فريق {storeName}</p><p className="mt-1 text-[10px] text-[#96958f]">مدير المتجر</p></div><a href="/settings" onClick={() => setAccountMenuOpen(false)} className="mt-1 flex items-center gap-2 rounded-lg px-3 py-2.5 text-xs font-medium text-[#68726a] hover:bg-[#f7f6f2]"><Settings2 size={15} /> إعدادات المتجر</a></div> : null}

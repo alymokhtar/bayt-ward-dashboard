@@ -1,6 +1,6 @@
 {
-  "name": "بيت ورد - لوحة التسويق",
-  "short_name": "بيت ورد",
+  "name": "Marketing Dashboard",
+  "short_name": "Marketing",
   "description": "لوحة التسويق لبيت ورد",
   "start_url": "/",
   "scope": "/",
