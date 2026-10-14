@@ -38,6 +38,7 @@ import { cleanupFailedUpload } from "@/app/actions/cleanup-upload";
 import { deletePost } from "@/app/actions/delete-post";
 import { uploadMedia } from "@/app/actions/upload-media";
 import BrandMark from "@/components/brand-mark";
+import SocialPlatformIcon from "@/components/social-platform-icon";
 
 type DashboardStats = {
   total: number;
@@ -55,6 +56,8 @@ const PLATFORMS = [
   { id: "instagram", name: "Instagram", subtitle: "منشور أو Reel", icon: Camera, style: "instagram" },
   { id: "tiktok", name: "TikTok", subtitle: "فيديو قصير", icon: Music2, style: "tiktok" },
   { id: "facebook", name: "Facebook", subtitle: "منشور الصفحة", icon: null, style: "facebook" },
+  { id: "youtube", name: "YouTube", subtitle: "فيديو أو Shorts", icon: null, style: "youtube" },
+  { id: "snapchat", name: "Snapchat", subtitle: "قصة أو Spotlight", icon: null, style: "snapchat" },
 ] as const;
 
 const STATUS_LABELS: Record<SavedPost["status"], string> = {
@@ -83,6 +86,14 @@ function PlatformMark({ platform }: { platform: (typeof PLATFORMS)[number] }) {
     return (
       <span className="grid size-10 place-items-center rounded-xl bg-[#edf3ff] text-lg font-bold text-[#1877f2]">
         f
+      </span>
+    );
+  }
+
+  if (platform.style === "youtube" || platform.style === "snapchat") {
+    return (
+      <span className={`grid size-10 place-items-center rounded-xl ${platform.style === "youtube" ? "bg-[#fff0f0] text-[#ff0033]" : "bg-[#fffc00] text-[#111]"}`}>
+        <SocialPlatformIcon platform={platform.style} size={22} />
       </span>
     );
   }

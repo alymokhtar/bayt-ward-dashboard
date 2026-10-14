@@ -21,11 +21,20 @@ export async function GET() {
         facebookPageId: true,
         instagramAccountId: true,
         tiktokAccountId: true,
+        youtubeChannelId: true,
+        youtubeToken: true,
+        snapchatClientId: true,
+        snapchatToken: true,
         updatedAt: true,
       },
     });
 
-    return NextResponse.json(settings, {
+    const { youtubeToken, snapchatToken, ...publicSettings } = settings;
+    return NextResponse.json({
+      ...publicSettings,
+      youtubeTokenConfigured: Boolean(youtubeToken),
+      snapchatTokenConfigured: Boolean(snapchatToken),
+    }, {
       headers: { "Cache-Control": "no-store" },
     });
   } catch {
@@ -61,6 +70,8 @@ export async function PUT(request: Request) {
     "facebookPageId",
     "instagramAccountId",
     "tiktokAccountId",
+    "youtubeChannelId",
+    "snapchatClientId",
   ] as const;
 
   for (const field of fields) {
@@ -75,7 +86,19 @@ export async function PUT(request: Request) {
     facebookPageId: (values.facebookPageId as string).trim(),
     instagramAccountId: (values.instagramAccountId as string).trim(),
     tiktokAccountId: (values.tiktokAccountId as string).trim(),
+    youtubeChannelId: (values.youtubeChannelId as string).trim(),
+    snapchatClientId: (values.snapchatClientId as string).trim(),
   };
+  const youtubeToken = values.youtubeToken;
+  const snapchatToken = values.snapchatToken;
+  if (
+    (youtubeToken !== undefined && typeof youtubeToken !== "string") ||
+    (snapchatToken !== undefined && typeof snapchatToken !== "string")
+  ) {
+    return jsonError("رموز الوصول يجب أن تكون نصوصاً صالحة.", 400);
+  }
+  const trimmedYoutubeToken = typeof youtubeToken === "string" ? youtubeToken.trim() : "";
+  const trimmedSnapchatToken = typeof snapchatToken === "string" ? snapchatToken.trim() : "";
 
   if (!data.storeName || data.storeName.length > 80) {
     return jsonError("اسم المتجر مطلوب ويجب ألا يتجاوز 80 حرفاً.", 400);
@@ -86,27 +109,50 @@ export async function PUT(request: Request) {
   if (
     data.facebookPageId.length > 255 ||
     data.instagramAccountId.length > 255 ||
-    data.tiktokAccountId.length > 255
+    data.tiktokAccountId.length > 255 ||
+    data.youtubeChannelId.length > 255 ||
+    data.snapchatClientId.length > 255
   ) {
     return jsonError("معرّف الحساب أطول من الحد المسموح.", 400);
+  }
+  if (trimmedYoutubeToken.length > 10000 || trimmedSnapchatToken.length > 10000) {
+    return jsonError("رمز الوصول أطول من الحد المسموح.", 400);
   }
 
   try {
     const settings = await prisma.settings.upsert({
       where: { id: SETTINGS_ID },
-      create: { id: SETTINGS_ID, ...data },
-      update: data,
+      create: {
+        id: SETTINGS_ID,
+        ...data,
+        ...(trimmedYoutubeToken ? { youtubeToken: trimmedYoutubeToken } : {}),
+        ...(trimmedSnapchatToken ? { snapchatToken: trimmedSnapchatToken } : {}),
+      },
+      update: {
+        ...data,
+        ...(trimmedYoutubeToken ? { youtubeToken: trimmedYoutubeToken } : {}),
+        ...(trimmedSnapchatToken ? { snapchatToken: trimmedSnapchatToken } : {}),
+      },
       select: {
         storeName: true,
         defaultHashtags: true,
         facebookPageId: true,
         instagramAccountId: true,
         tiktokAccountId: true,
+        youtubeChannelId: true,
+        youtubeToken: true,
+        snapchatClientId: true,
+        snapchatToken: true,
         updatedAt: true,
       },
     });
 
-    return NextResponse.json(settings, {
+    const { youtubeToken, snapchatToken, ...publicSettings } = settings;
+    return NextResponse.json({
+      ...publicSettings,
+      youtubeTokenConfigured: Boolean(youtubeToken),
+      snapchatTokenConfigured: Boolean(snapchatToken),
+    }, {
       headers: { "Cache-Control": "no-store" },
     });
   } catch {

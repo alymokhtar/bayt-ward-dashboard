@@ -31,5 +31,9 @@ model Settings {
   facebookPageId     String   @default("") @db.Text
   instagramAccountId String   @default("") @db.Text
   tiktokAccountId    String   @default("") @db.Text
+  youtubeChannelId   String   @default("") @db.Text
+  youtubeToken       String   @default("") @db.Text
+  snapchatClientId   String   @default("") @db.Text
+  snapchatToken      String   @default("") @db.Text
   updatedAt          DateTime @updatedAt
 }

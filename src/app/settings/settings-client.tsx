@@ -3,6 +3,7 @@
 import Link from "next/link";
 import { useEffect, useRef, useState } from "react";
 import BrandMark from "@/components/brand-mark";
+import SocialPlatformIcon from "@/components/social-platform-icon";
 import {
   ArrowRight,
   Camera,
@@ -36,6 +37,13 @@ type SavedSettings = {
   facebookPageId: string;
   instagramAccountId: string;
   tiktokAccountId: string;
+  youtubeChannelId: string;
+  snapchatClientId: string;
+};
+
+type SettingsResponse = Partial<SavedSettings> & {
+  youtubeTokenConfigured?: boolean;
+  snapchatTokenConfigured?: boolean;
 };
 
 const DEFAULT_SETTINGS: SavedSettings = {
@@ -44,6 +52,8 @@ const DEFAULT_SETTINGS: SavedSettings = {
   facebookPageId: "",
   instagramAccountId: "",
   tiktokAccountId: "",
+  youtubeChannelId: "",
+  snapchatClientId: "",
 };
 
 const SETTINGS_SECTIONS = [
@@ -60,6 +70,12 @@ export default function SettingsClient({ cloudinaryConfigured }: SettingsClientP
   const [settingsError, setSettingsError] = useState("");
   const [facebookAccessToken, setFacebookAccessToken] = useState("");
   const [showAccessToken, setShowAccessToken] = useState(false);
+  const [youtubeToken, setYoutubeToken] = useState("");
+  const [snapchatToken, setSnapchatToken] = useState("");
+  const [youtubeTokenConfigured, setYoutubeTokenConfigured] = useState(false);
+  const [snapchatTokenConfigured, setSnapchatTokenConfigured] = useState(false);
+  const [showYoutubeToken, setShowYoutubeToken] = useState(false);
+  const [showSnapchatToken, setShowSnapchatToken] = useState(false);
   const [toast, setToast] = useState("");
   const [toastIsError, setToastIsError] = useState(false);
   const toastTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
@@ -76,14 +92,18 @@ export default function SettingsClient({ cloudinaryConfigured }: SettingsClientP
           throw new Error(message);
         }
 
-        const values = result && typeof result === "object" ? result as Partial<SavedSettings> : {};
+        const values = result && typeof result === "object" ? result as SettingsResponse : {};
         setSettings({
           storeName: typeof values.storeName === "string" ? values.storeName : DEFAULT_SETTINGS.storeName,
           defaultHashtags: typeof values.defaultHashtags === "string" ? values.defaultHashtags : DEFAULT_SETTINGS.defaultHashtags,
           facebookPageId: typeof values.facebookPageId === "string" ? values.facebookPageId : "",
           instagramAccountId: typeof values.instagramAccountId === "string" ? values.instagramAccountId : "",
           tiktokAccountId: typeof values.tiktokAccountId === "string" ? values.tiktokAccountId : "",
+          youtubeChannelId: typeof values.youtubeChannelId === "string" ? values.youtubeChannelId : "",
+          snapchatClientId: typeof values.snapchatClientId === "string" ? values.snapchatClientId : "",
         });
+        setYoutubeTokenConfigured(values.youtubeTokenConfigured === true);
+        setSnapchatTokenConfigured(values.snapchatTokenConfigured === true);
       })
       .catch((error: unknown) => {
         if (!controller.signal.aborted) {
@@ -114,7 +134,7 @@ export default function SettingsClient({ cloudinaryConfigured }: SettingsClientP
       const response = await fetch("/api/settings", {
         method: "PUT",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify(settings),
+        body: JSON.stringify({ ...settings, youtubeToken, snapchatToken }),
       });
       const result: unknown = await response.json();
       if (!response.ok) {
@@ -124,14 +144,20 @@ export default function SettingsClient({ cloudinaryConfigured }: SettingsClientP
         throw new Error(message);
       }
 
-      const values = result && typeof result === "object" ? result as Partial<SavedSettings> : {};
+      const values = result && typeof result === "object" ? result as SettingsResponse : {};
       setSettings((current) => ({
         storeName: typeof values.storeName === "string" ? values.storeName : current.storeName,
         defaultHashtags: typeof values.defaultHashtags === "string" ? values.defaultHashtags : current.defaultHashtags,
         facebookPageId: typeof values.facebookPageId === "string" ? values.facebookPageId : current.facebookPageId,
         instagramAccountId: typeof values.instagramAccountId === "string" ? values.instagramAccountId : current.instagramAccountId,
         tiktokAccountId: typeof values.tiktokAccountId === "string" ? values.tiktokAccountId : current.tiktokAccountId,
+        youtubeChannelId: typeof values.youtubeChannelId === "string" ? values.youtubeChannelId : current.youtubeChannelId,
+        snapchatClientId: typeof values.snapchatClientId === "string" ? values.snapchatClientId : current.snapchatClientId,
       }));
+      setYoutubeTokenConfigured(values.youtubeTokenConfigured === true);
+      setSnapchatTokenConfigured(values.snapchatTokenConfigured === true);
+      setYoutubeToken("");
+      setSnapchatToken("");
       setToast(facebookAccessToken
         ? "حُفظت الإعدادات في قاعدة البيانات. لم يُرسل رمز الوصول حفاظاً على أمانه."
         : "تم حفظ التغييرات في قاعدة البيانات بنجاح.");
@@ -256,6 +282,39 @@ export default function SettingsClient({ cloudinaryConfigured }: SettingsClientP
                         <input id="tiktok-account-id" value={settings.tiktokAccountId} onChange={(event) => updateSetting("tiktokAccountId", event.target.value)} className={`${inputClass} pr-10`} placeholder="معرّف الحساب" autoComplete="off" />
                       </div>
                     </Field>
+                    <Field label="YouTube Channel ID" htmlFor="youtube-channel-id" hint="معرّف قناة YouTube">
+                      <div className="relative">
+                        <span className="pointer-events-none absolute right-3.5 top-1/2 grid size-6 -translate-y-1/2 place-items-center rounded-md bg-[#fff0f0] text-[#ff0033]">
+                          <SocialPlatformIcon platform="youtube" size={17} />
+                        </span>
+                        <input id="youtube-channel-id" value={settings.youtubeChannelId} onChange={(event) => updateSetting("youtubeChannelId", event.target.value)} className={`${inputClass} pr-12`} placeholder="معرّف القناة" autoComplete="off" />
+                      </div>
+                    </Field>
+                    <Field label="Snapchat Client ID" htmlFor="snapchat-client-id" hint="معرّف تطبيق Snapchat">
+                      <div className="relative">
+                        <span className="pointer-events-none absolute right-3.5 top-1/2 grid size-6 -translate-y-1/2 place-items-center rounded-md bg-[#fffc00] text-[#111]">
+                          <SocialPlatformIcon platform="snapchat" size={17} />
+                        </span>
+                        <input id="snapchat-client-id" value={settings.snapchatClientId} onChange={(event) => updateSetting("snapchatClientId", event.target.value)} className={`${inputClass} pr-12`} placeholder="معرّف التطبيق" autoComplete="off" />
+                      </div>
+                    </Field>
+                  </div>
+
+                  <div className="grid gap-5 sm:grid-cols-2">
+                    <Field label="YouTube Access Token" htmlFor="youtube-access-token" hint={youtubeTokenConfigured ? "رمز محفوظ — اتركيه فارغاً للاحتفاظ به" : "لم يُحفظ رمز بعد"}>
+                      <div className="relative">
+                        <LockKeyhole size={16} className="pointer-events-none absolute right-3.5 top-1/2 -translate-y-1/2 text-[#92978e]" />
+                        <input id="youtube-access-token" type={showYoutubeToken ? "text" : "password"} value={youtubeToken} onChange={(event) => setYoutubeToken(event.target.value)} className={`${inputClass} px-11`} placeholder={youtubeTokenConfigured ? "أدخلي رمزاً جديداً للاستبدال" : "أدخلي رمز الوصول"} autoComplete="new-password" />
+                        <button type="button" onClick={() => setShowYoutubeToken((visible) => !visible)} className="absolute left-3 top-1/2 -translate-y-1/2 rounded-md p-1 text-[#8f948c] hover:bg-[#f4f3ef]" aria-label={showYoutubeToken ? "إخفاء رمز YouTube" : "إظهار رمز YouTube"}>{showYoutubeToken ? <EyeOff size={16} /> : <Eye size={16} />}</button>
+                      </div>
+                    </Field>
+                    <Field label="Snapchat Access Token" htmlFor="snapchat-access-token" hint={snapchatTokenConfigured ? "رمز محفوظ — اتركيه فارغاً للاحتفاظ به" : "لم يُحفظ رمز بعد"}>
+                      <div className="relative">
+                        <LockKeyhole size={16} className="pointer-events-none absolute right-3.5 top-1/2 -translate-y-1/2 text-[#92978e]" />
+                        <input id="snapchat-access-token" type={showSnapchatToken ? "text" : "password"} value={snapchatToken} onChange={(event) => setSnapchatToken(event.target.value)} className={`${inputClass} px-11`} placeholder={snapchatTokenConfigured ? "أدخلي رمزاً جديداً للاستبدال" : "أدخلي رمز الوصول"} autoComplete="new-password" />
+                        <button type="button" onClick={() => setShowSnapchatToken((visible) => !visible)} className="absolute left-3 top-1/2 -translate-y-1/2 rounded-md p-1 text-[#8f948c] hover:bg-[#f4f3ef]" aria-label={showSnapchatToken ? "إخفاء رمز Snapchat" : "إظهار رمز Snapchat"}>{showSnapchatToken ? <EyeOff size={16} /> : <Eye size={16} />}</button>
+                      </div>
+                    </Field>
                   </div>
 
                   <Field label="Facebook Access Token" htmlFor="facebook-access-token" hint="يُخفى أثناء الإدخال ولا يُحفظ في المتصفح">
@@ -268,7 +327,7 @@ export default function SettingsClient({ cloudinaryConfigured }: SettingsClientP
 
                   <div className="flex items-start gap-2.5 rounded-xl border border-[#eee9dc] bg-[#fbf9f3] px-3.5 py-3 text-[11px] leading-6 text-[#817a68]">
                     <ShieldCheck size={16} className="mt-0.5 shrink-0 text-[#8e876d]" />
-                    <p>حقول الربط جاهزة للتكامل المستقبلي. لأمانك، لا يُحفظ رمز الوصول في التخزين المحلي؛ خزّنيه لاحقاً في إعدادات الخادم السرية قبل تفعيل النشر.</p>
+                    <p>رموز YouTube وSnapchat تُحفظ في قاعدة البيانات ولا تُعاد إلى المتصفح؛ اتركي حقل الرمز فارغاً للاحتفاظ بالرمز المحفوظ. رموز Facebook غير مدعومة للحفظ في هذه الصفحة.</p>
                   </div>
                 </div>
               </section>

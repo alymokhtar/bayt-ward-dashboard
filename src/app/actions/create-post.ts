@@ -2,7 +2,7 @@
 
 import { prisma } from "@/lib/prisma";
 
-const ALLOWED_PLATFORMS = new Set(["facebook", "instagram", "tiktok"]);
+const ALLOWED_PLATFORMS = new Set(["facebook", "instagram", "tiktok", "youtube", "snapchat"]);
 
 export type CreatePostInput = {
   caption: string;
