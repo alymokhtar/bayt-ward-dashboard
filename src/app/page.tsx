@@ -21,12 +21,17 @@ export default async function Home() {
           mediaUrl: true,
           cloudinaryPublicId: true,
           platforms: true,
+          mediaType: true,
           status: true,
+          facebookStatus: true,
+          instagramStatus: true,
+          facebookError: true,
+          instagramError: true,
           createdAt: true,
         },
       }),
       prisma.post.count(),
-      prisma.post.count({ where: { status: PostStatus.PENDING } }),
+      prisma.post.count({ where: { status: { in: [PostStatus.PENDING, PostStatus.PUBLISHING] } } }),
       prisma.post.count({ where: { status: PostStatus.PUBLISHED } }),
     ]);
 
@@ -35,6 +40,7 @@ export default async function Home() {
       platforms: Array.isArray(post.platforms)
         ? post.platforms.filter((platform): platform is string => typeof platform === "string")
         : [],
+      mediaType: post.mediaType === "video" ? "video" : "image",
       createdAt: post.createdAt.toISOString(),
     }));
     stats = { total, pending, published };

@@ -1,6 +1,7 @@
 "use server";
 
 import { prisma } from "@/lib/prisma";
+import { isAdminAuthenticated } from "@/lib/admin-auth";
 
 const ALLOWED_PLATFORMS = new Set(["facebook", "instagram", "tiktok", "youtube", "snapchat"]);
 
@@ -8,6 +9,7 @@ export type CreatePostInput = {
   caption: string;
   mediaUrl: string;
   cloudinaryPublicId: string;
+  mediaType: "image" | "video";
   platforms: string[];
 };
 
@@ -17,7 +19,12 @@ export type SavedPost = {
   mediaUrl: string;
   cloudinaryPublicId: string;
   platforms: string[];
-  status: "PENDING" | "PUBLISHED" | "FAILED";
+  mediaType: "image" | "video";
+  status: "PENDING" | "PUBLISHING" | "PUBLISHED" | "FAILED" | "UNKNOWN";
+  facebookStatus: "PENDING" | "PUBLISHING" | "PUBLISHED" | "FAILED" | "UNKNOWN" | null;
+  instagramStatus: "PENDING" | "PUBLISHING" | "PUBLISHED" | "FAILED" | "UNKNOWN" | null;
+  facebookError: string | null;
+  instagramError: string | null;
   createdAt: string;
 };
 
@@ -26,10 +33,15 @@ export type CreatePostResult =
   | { success: false; error: string };
 
 export async function createPost(input: CreatePostInput): Promise<CreatePostResult> {
+  if (!(await isAdminAuthenticated())) {
+    return { success: false, error: "انتهت جلسة الدخول. سجّلي الدخول مجدداً." };
+  }
+
   const caption = typeof input?.caption === "string" ? input.caption.trim() : "";
   const mediaUrl = typeof input?.mediaUrl === "string" ? input.mediaUrl : "";
   const cloudinaryPublicId =
     typeof input?.cloudinaryPublicId === "string" ? input.cloudinaryPublicId : "";
+  const mediaType = input?.mediaType === "video" ? "video" : "image";
   const platforms = Array.isArray(input?.platforms)
     ? [...new Set(input.platforms.filter((platform) => typeof platform === "string" && ALLOWED_PLATFORMS.has(platform)))]
     : [];
@@ -58,6 +70,9 @@ export async function createPost(input: CreatePostInput): Promise<CreatePostResu
         mediaUrl,
         cloudinaryPublicId,
         platforms,
+        mediaType,
+        ...(platforms.includes("facebook") ? { facebookStatus: "PENDING" as const } : {}),
+        ...(platforms.includes("instagram") ? { instagramStatus: "PENDING" as const } : {}),
       },
     });
 
@@ -69,7 +84,12 @@ export async function createPost(input: CreatePostInput): Promise<CreatePostResu
         mediaUrl: post.mediaUrl,
         cloudinaryPublicId: post.cloudinaryPublicId,
         platforms,
+        mediaType,
         status: post.status,
+        facebookStatus: post.facebookStatus,
+        instagramStatus: post.instagramStatus,
+        facebookError: post.facebookError,
+        instagramError: post.instagramError,
         createdAt: post.createdAt.toISOString(),
       },
     };

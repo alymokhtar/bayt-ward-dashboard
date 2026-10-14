@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 import { SOCIAL_LINK_FALLBACKS, SOCIAL_PLATFORMS, type SocialLink, type SocialPlatform } from "@/constants/socials";
 import { prisma } from "@/lib/prisma";
+import { isAdminAuthenticated } from "@/lib/admin-auth";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -40,6 +41,10 @@ function getSocialHref(platform: SocialPlatform, value: string | null | undefine
 }
 
 export async function GET() {
+  if (!(await isAdminAuthenticated())) {
+    return NextResponse.json({ error: "يلزم تسجيل الدخول." }, { status: 401 });
+  }
+
   try {
     const settings = await prisma.settings.findUnique({
       where: { id: SETTINGS_ID },

@@ -11,6 +11,7 @@ import {
   Check,
   ChevronDown,
   CircleCheck,
+  CircleHelp,
   Clock3,
   FileImage,
   FolderOpen,
@@ -63,8 +64,10 @@ const PLATFORMS = [
 
 const STATUS_LABELS: Record<SavedPost["status"], string> = {
   PENDING: "قيد الانتظار",
+  PUBLISHING: "جارٍ النشر",
   PUBLISHED: "تم النشر",
   FAILED: "تعذّر النشر",
+  UNKNOWN: "تحقق مطلوب",
 };
 
 function subscribeToTheme(onChange: () => void) {
@@ -181,23 +184,27 @@ function Sidebar({ storeName }: { storeName: string }) {
 function StatusPill({ status }: { status: SavedPost["status"] }) {
   const styles = {
     PENDING: "bg-[#fff5e5] text-[#9c6d24]",
+    PUBLISHING: "bg-[#edf3ff] text-[#426b9a]",
     PUBLISHED: "bg-[#e9f5ed] text-[#36734c]",
     FAILED: "bg-[#fff0ee] text-[#b4534c]",
+    UNKNOWN: "bg-[#fff4e9] text-[#a07035]",
   };
 
   return (
     <span className={`inline-flex items-center gap-1.5 rounded-full px-2.5 py-1 text-[11px] font-semibold ${styles[status]}`}>
-      {status === "PENDING" ? <Clock3 size={12} /> : status === "PUBLISHED" ? <CircleCheck size={12} /> : <X size={12} />}
+      {status === "PENDING" ? <Clock3 size={12} /> : status === "PUBLISHING" ? <LoaderCircle size={12} className="animate-spin" /> : status === "PUBLISHED" ? <CircleCheck size={12} /> : status === "UNKNOWN" ? <CircleHelp size={12} /> : <X size={12} />}
       {STATUS_LABELS[status]}
     </span>
   );
 }
 
-function HistorySection({ posts, databaseAvailable, searchTerm, onDelete, deletingPostId, actionError, actionNotice }: {
+function HistorySection({ posts, databaseAvailable, searchTerm, onDelete, onRetryPublish, retryingPostId, deletingPostId, actionError, actionNotice }: {
   posts: SavedPost[];
   databaseAvailable: boolean;
   searchTerm: string;
   onDelete: (post: SavedPost) => void;
+  onRetryPublish: (post: SavedPost) => void;
+  retryingPostId: string | null;
   deletingPostId: string | null;
   actionError: string;
   actionNotice: string;
@@ -248,9 +255,38 @@ function HistorySection({ posts, databaseAvailable, searchTerm, onDelete, deleti
                     <span>{date}</span><span aria-hidden="true">·</span>
                     {post.platforms.map((platform) => <span key={platform} className="capitalize">{platform}</span>)}
                   </div>
+                  {post.platforms.some((platform) => platform === "facebook" || platform === "instagram") ? (
+                    <div className="mt-2 space-y-1.5">
+                      {(["facebook", "instagram"] as const).map((platform) => {
+                        if (!post.platforms.includes(platform)) return null;
+                        const status = platform === "facebook" ? post.facebookStatus : post.instagramStatus;
+                        const error = platform === "facebook" ? post.facebookError : post.instagramError;
+                        return (
+                          <p key={platform} className="text-[10px] leading-5 text-[#777f77]">
+                            <span className="font-semibold">{platform === "facebook" ? "Facebook" : "Instagram"}:</span>{" "}
+                            {status ? status === "UNKNOWN" ? "تحققي من الحساب قبل إعادة المحاولة" : STATUS_LABELS[status] : "لم يبدأ النشر"}
+                            {error ? <span className="block text-[#a44f46]">{error}</span> : null}
+                          </p>
+                        );
+                      })}
+                      {post.platforms.some((platform) => platform !== "facebook" && platform !== "instagram") ? (
+                        <p className="text-[10px] text-[#a07035]">بقية المنصات غير مفعّلة للنشر التلقائي بعد.</p>
+                      ) : null}
+                    </div>
+                  ) : null}
                 </div>
                 <div className="col-span-2 flex items-center justify-between gap-3 pr-[68px] sm:col-span-1 sm:justify-end sm:pr-0">
                   <StatusPill status={post.status} />
+                  {post.status === "FAILED" && post.platforms.some((platform) => (platform === "facebook" && (post.facebookStatus === "FAILED" || post.facebookStatus === "PENDING")) || (platform === "instagram" && (post.instagramStatus === "FAILED" || post.instagramStatus === "PENDING"))) ? (
+                    <button
+                      type="button"
+                      onClick={() => onRetryPublish(post)}
+                      disabled={retryingPostId === post.id}
+                      className="rounded-lg border border-[#e9e7e0] px-2 py-1.5 text-[10px] font-semibold text-[#53645a] hover:bg-[#f8f7f3] disabled:opacity-50"
+                    >
+                      {retryingPostId === post.id ? "جارٍ المحاولة..." : "إعادة النشر"}
+                    </button>
+                  ) : null}
                   <button
                     type="button"
                     aria-label={`حذف المنشور: ${post.caption.slice(0, 40)}`}
@@ -288,6 +324,7 @@ export default function DashboardClient({ initialPosts, initialStats, databaseAv
   const [accountMenuOpen, setAccountMenuOpen] = useState(false);
   const [searchTerm, setSearchTerm] = useState("");
   const [deletingPostId, setDeletingPostId] = useState<string | null>(null);
+  const [retryingPostId, setRetryingPostId] = useState<string | null>(null);
   const [historyError, setHistoryError] = useState("");
   const [historyNotice, setHistoryNotice] = useState("");
   const isDarkMode = useSyncExternalStore(subscribeToTheme, getThemeSnapshot, getServerThemeSnapshot);
@@ -372,7 +409,7 @@ export default function DashboardClient({ initialPosts, initialStats, databaseAv
       setStats((current) => ({
         ...current,
         total: Math.max(0, current.total - 1),
-        pending: post.status === "PENDING" ? Math.max(0, current.pending - 1) : current.pending,
+        pending: post.status === "PENDING" || post.status === "PUBLISHING" ? Math.max(0, current.pending - 1) : current.pending,
         published: post.status === "PUBLISHED" ? Math.max(0, current.published - 1) : current.published,
       }));
       setHistoryNotice(result.cloudinaryCleanupPending
@@ -382,6 +419,39 @@ export default function DashboardClient({ initialPosts, initialStats, databaseAv
       setHistoryError("تعذّر حذف المنشور. تحققي من الاتصال ثم حاولي مرة أخرى.");
     } finally {
       setDeletingPostId(null);
+    }
+  }
+
+  async function handleRetryPublish(post: SavedPost) {
+    if (retryingPostId) return;
+    setRetryingPostId(post.id);
+    setHistoryError("");
+    setHistoryNotice("");
+    try {
+      const response = await fetch(`/api/posts/${encodeURIComponent(post.id)}/publish`, { method: "POST" });
+      const result: unknown = await response.json();
+      const updatedPost = result && typeof result === "object" && "post" in result
+        ? result.post as SavedPost
+        : null;
+      if (updatedPost) {
+        setPosts((current) => current.map((item) => item.id === post.id ? updatedPost : item));
+        setStats((current) => ({
+          ...current,
+          pending: Math.max(0, current.pending + (updatedPost.status === "PENDING" || updatedPost.status === "PUBLISHING" ? 1 : 0) - (post.status === "PENDING" || post.status === "PUBLISHING" ? 1 : 0)),
+          published: Math.max(0, current.published + (updatedPost.status === "PUBLISHED" ? 1 : 0) - (post.status === "PUBLISHED" ? 1 : 0)),
+        }));
+      }
+      if (!response.ok) {
+        const message = result && typeof result === "object" && "error" in result && typeof result.error === "string"
+          ? result.error
+          : "تعذّرت إعادة نشر المنشور.";
+        throw new Error(message);
+      }
+      setHistoryNotice("تم تحديث حالة محاولة النشر.");
+    } catch (retryError) {
+      setHistoryError(retryError instanceof Error ? retryError.message : "تعذّرت إعادة نشر المنشور.");
+    } finally {
+      setRetryingPostId(null);
     }
   }
 
@@ -473,6 +543,7 @@ export default function DashboardClient({ initialPosts, initialStats, databaseAv
         caption: finalCaption,
         mediaUrl: upload.mediaUrl,
         cloudinaryPublicId: upload.publicId,
+        mediaType: selectedFile.type.startsWith("video/") ? "video" : "image",
         platforms: selectedPlatforms,
       });
 
@@ -484,11 +555,45 @@ export default function DashboardClient({ initialPosts, initialStats, databaseAv
         return;
       }
 
-      setPosts((current) => [result.post, ...current].slice(0, 8));
-      setStats((current) => ({ ...current, total: current.total + 1, pending: current.pending + 1 }));
+      let savedPost = result.post;
+      if (selectedPlatforms.some((platform) => platform === "facebook" || platform === "instagram")) {
+        try {
+          const publishResponse = await fetch(`/api/posts/${encodeURIComponent(savedPost.id)}/publish`, {
+            method: "POST",
+          });
+          const publishResult: unknown = await publishResponse.json();
+          if (publishResult && typeof publishResult === "object" && "post" in publishResult) {
+            const responsePost = publishResult.post;
+            if (responsePost && typeof responsePost === "object" && "id" in responsePost && responsePost.id === savedPost.id) {
+              savedPost = responsePost as SavedPost;
+            }
+          }
+          if (!publishResponse.ok) {
+            const message = publishResult && typeof publishResult === "object" && "error" in publishResult && typeof publishResult.error === "string"
+              ? publishResult.error
+              : "حُفظ المنشور لكن تعذّر نشره على Meta.";
+            setError(message);
+          } else if (savedPost.status === "PUBLISHED") {
+            setNotice("تم نشر المنشور بنجاح على المنصات المحددة من Meta.");
+          } else {
+            setNotice("تم حفظ المنشور. راجعي حالة النشر لكل منصة في سجل المنشورات.");
+          }
+        } catch {
+          setError("حُفظ المنشور، لكن لم يصل ردّ النشر من Meta. تحققي من سجل المنشورات قبل إعادة المحاولة.");
+        }
+      } else {
+        setNotice("تمت إضافة المنشور إلى قائمة الانتظار؛ النشر المباشر متاح حالياً لفيسبوك وإنستجرام فقط.");
+      }
+
+      setPosts((current) => [savedPost, ...current].slice(0, 8));
+      setStats((current) => ({
+        ...current,
+        total: current.total + 1,
+        pending: current.pending + (savedPost.status === "PENDING" || savedPost.status === "PUBLISHING" ? 1 : 0),
+        published: current.published + (savedPost.status === "PUBLISHED" ? 1 : 0),
+      }));
       clearSelectedFile();
       setCaption("");
-      setNotice("تمت إضافة منشورك إلى قائمة النشر بنجاح.");
     } catch {
       setError("حدث خطأ غير متوقع. يرجى المحاولة مرة أخرى.");
     } finally {
@@ -754,7 +859,7 @@ export default function DashboardClient({ initialPosts, initialStats, databaseAv
               </aside>
             </div>
 
-            <HistorySection posts={filteredPosts} databaseAvailable={databaseAvailable} searchTerm={searchTerm} onDelete={handleDeletePost} deletingPostId={deletingPostId} actionError={historyError} actionNotice={historyNotice} />
+            <HistorySection posts={filteredPosts} databaseAvailable={databaseAvailable} searchTerm={searchTerm} onDelete={handleDeletePost} onRetryPublish={handleRetryPublish} retryingPostId={retryingPostId} deletingPostId={deletingPostId} actionError={historyError} actionNotice={historyNotice} />
             <footer id="social-links" className="px-1 py-7 text-center text-[10px] text-[#a2a39b]">
               <p>صُنع بكل حب في بيت ورد <span className="text-[#c47f78]">♥</span></p>
               <SocialLinks />

@@ -1,5 +1,7 @@
 import { NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
+import { isAdminAuthenticated } from "@/lib/admin-auth";
+import { encryptMetaToken } from "@/lib/meta-token";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -10,6 +12,10 @@ function jsonError(message: string, status: number) {
 }
 
 export async function GET() {
+  if (!(await isAdminAuthenticated())) {
+    return jsonError("يلزم تسجيل الدخول.", 401);
+  }
+
   try {
     const settings = await prisma.settings.upsert({
       where: { id: SETTINGS_ID },
@@ -25,15 +31,17 @@ export async function GET() {
         youtubeToken: true,
         snapchatClientId: true,
         snapchatToken: true,
+        metaAccessTokenEncrypted: true,
         updatedAt: true,
       },
     });
 
-    const { youtubeToken, snapchatToken, ...publicSettings } = settings;
+    const { youtubeToken, snapchatToken, metaAccessTokenEncrypted, ...publicSettings } = settings;
     return NextResponse.json({
       ...publicSettings,
       youtubeTokenConfigured: Boolean(youtubeToken),
       snapchatTokenConfigured: Boolean(snapchatToken),
+      metaAccessTokenConfigured: Boolean(metaAccessTokenEncrypted),
     }, {
       headers: { "Cache-Control": "no-store" },
     });
@@ -43,6 +51,10 @@ export async function GET() {
 }
 
 export async function PUT(request: Request) {
+  if (!(await isAdminAuthenticated())) {
+    return jsonError("يلزم تسجيل الدخول.", 401);
+  }
+
   const origin = request.headers.get("origin");
   const host = request.headers.get("x-forwarded-host") ?? request.headers.get("host");
   if (!origin || !host) return jsonError("تعذّر التحقق من مصدر الطلب.", 403);
@@ -91,14 +103,17 @@ export async function PUT(request: Request) {
   };
   const youtubeToken = values.youtubeToken;
   const snapchatToken = values.snapchatToken;
+  const metaAccessToken = values.metaAccessToken;
   if (
     (youtubeToken !== undefined && typeof youtubeToken !== "string") ||
-    (snapchatToken !== undefined && typeof snapchatToken !== "string")
+    (snapchatToken !== undefined && typeof snapchatToken !== "string") ||
+    (metaAccessToken !== undefined && typeof metaAccessToken !== "string")
   ) {
     return jsonError("رموز الوصول يجب أن تكون نصوصاً صالحة.", 400);
   }
   const trimmedYoutubeToken = typeof youtubeToken === "string" ? youtubeToken.trim() : "";
   const trimmedSnapchatToken = typeof snapchatToken === "string" ? snapchatToken.trim() : "";
+  const trimmedMetaAccessToken = typeof metaAccessToken === "string" ? metaAccessToken.trim() : "";
 
   if (!data.storeName || data.storeName.length > 80) {
     return jsonError("اسم المتجر مطلوب ويجب ألا يتجاوز 80 حرفاً.", 400);
@@ -118,6 +133,18 @@ export async function PUT(request: Request) {
   if (trimmedYoutubeToken.length > 10000 || trimmedSnapchatToken.length > 10000) {
     return jsonError("رمز الوصول أطول من الحد المسموح.", 400);
   }
+  if (trimmedMetaAccessToken.length > 10000) {
+    return jsonError("رمز وصول Meta أطول من الحد المسموح.", 400);
+  }
+
+  let encryptedMetaAccessToken: string | undefined;
+  if (trimmedMetaAccessToken) {
+    try {
+      encryptedMetaAccessToken = encryptMetaToken(trimmedMetaAccessToken);
+    } catch {
+      return jsonError("إعداد تشفير رمز Meta غير مكتمل على الخادم.", 503);
+    }
+  }
 
   try {
     const settings = await prisma.settings.upsert({
@@ -127,11 +154,13 @@ export async function PUT(request: Request) {
         ...data,
         ...(trimmedYoutubeToken ? { youtubeToken: trimmedYoutubeToken } : {}),
         ...(trimmedSnapchatToken ? { snapchatToken: trimmedSnapchatToken } : {}),
+        ...(encryptedMetaAccessToken ? { metaAccessTokenEncrypted: encryptedMetaAccessToken } : {}),
       },
       update: {
         ...data,
         ...(trimmedYoutubeToken ? { youtubeToken: trimmedYoutubeToken } : {}),
         ...(trimmedSnapchatToken ? { snapchatToken: trimmedSnapchatToken } : {}),
+        ...(encryptedMetaAccessToken ? { metaAccessTokenEncrypted: encryptedMetaAccessToken } : {}),
       },
       select: {
         storeName: true,
@@ -143,15 +172,17 @@ export async function PUT(request: Request) {
         youtubeToken: true,
         snapchatClientId: true,
         snapchatToken: true,
+        metaAccessTokenEncrypted: true,
         updatedAt: true,
       },
     });
 
-    const { youtubeToken, snapchatToken, ...publicSettings } = settings;
+    const { youtubeToken, snapchatToken, metaAccessTokenEncrypted, ...publicSettings } = settings;
     return NextResponse.json({
       ...publicSettings,
       youtubeTokenConfigured: Boolean(youtubeToken),
       snapchatTokenConfigured: Boolean(snapchatToken),
+      metaAccessTokenConfigured: Boolean(metaAccessTokenEncrypted),
     }, {
       headers: { "Cache-Control": "no-store" },
     });

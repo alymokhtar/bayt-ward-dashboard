@@ -2,12 +2,17 @@
 
 import { prisma } from "@/lib/prisma";
 import { cloudinary } from "@/lib/cloudinary";
+import { isAdminAuthenticated } from "@/lib/admin-auth";
 
 export type DeletePostResult =
   | { success: true; cloudinaryCleanupPending: boolean }
   | { success: false; error: string };
 
 export async function deletePost(postId: string): Promise<DeletePostResult> {
+  if (!(await isAdminAuthenticated())) {
+    return { success: false, error: "انتهت جلسة الدخول. سجّلي الدخول مجدداً." };
+  }
+
   if (typeof postId !== "string" || !/^[0-9a-f-]{36}$/i.test(postId)) {
     return { success: false, error: "معرّف المنشور غير صالح." };
   }

@@ -9,6 +9,7 @@
     "lint": "eslint",
     "db:generate": "prisma generate",
     "db:migrate": "node scripts/prisma-migrate.mjs",
+    "db:deploy": "node scripts/prisma-migrate.mjs deploy",
     "postinstall": "prisma generate"
   },
   "dependencies": {

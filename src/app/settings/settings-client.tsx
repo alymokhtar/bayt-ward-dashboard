@@ -4,6 +4,7 @@ import Link from "next/link";
 import { useEffect, useRef, useState } from "react";
 import BrandMark from "@/components/brand-mark";
 import SocialPlatformIcon from "@/components/social-platform-icon";
+import AuthLogoutButton from "@/components/auth-logout-button";
 import {
   ArrowRight,
   Camera,
@@ -44,6 +45,7 @@ type SavedSettings = {
 type SettingsResponse = Partial<SavedSettings> & {
   youtubeTokenConfigured?: boolean;
   snapchatTokenConfigured?: boolean;
+  metaAccessTokenConfigured?: boolean;
 };
 
 const DEFAULT_SETTINGS: SavedSettings = {
@@ -68,7 +70,8 @@ export default function SettingsClient({ cloudinaryConfigured }: SettingsClientP
   const [settingsLoaded, setSettingsLoaded] = useState(false);
   const [isSaving, setIsSaving] = useState(false);
   const [settingsError, setSettingsError] = useState("");
-  const [facebookAccessToken, setFacebookAccessToken] = useState("");
+  const [metaAccessToken, setMetaAccessToken] = useState("");
+  const [metaAccessTokenConfigured, setMetaAccessTokenConfigured] = useState(false);
   const [showAccessToken, setShowAccessToken] = useState(false);
   const [youtubeToken, setYoutubeToken] = useState("");
   const [snapchatToken, setSnapchatToken] = useState("");
@@ -104,6 +107,7 @@ export default function SettingsClient({ cloudinaryConfigured }: SettingsClientP
         });
         setYoutubeTokenConfigured(values.youtubeTokenConfigured === true);
         setSnapchatTokenConfigured(values.snapchatTokenConfigured === true);
+        setMetaAccessTokenConfigured(values.metaAccessTokenConfigured === true);
       })
       .catch((error: unknown) => {
         if (!controller.signal.aborted) {
@@ -134,7 +138,7 @@ export default function SettingsClient({ cloudinaryConfigured }: SettingsClientP
       const response = await fetch("/api/settings", {
         method: "PUT",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ ...settings, youtubeToken, snapchatToken }),
+        body: JSON.stringify({ ...settings, youtubeToken, snapchatToken, metaAccessToken }),
       });
       const result: unknown = await response.json();
       if (!response.ok) {
@@ -156,11 +160,11 @@ export default function SettingsClient({ cloudinaryConfigured }: SettingsClientP
       }));
       setYoutubeTokenConfigured(values.youtubeTokenConfigured === true);
       setSnapchatTokenConfigured(values.snapchatTokenConfigured === true);
+      setMetaAccessTokenConfigured(values.metaAccessTokenConfigured === true);
       setYoutubeToken("");
       setSnapchatToken("");
-      setToast(facebookAccessToken
-        ? "حُفظت الإعدادات في قاعدة البيانات. لم يُرسل رمز الوصول حفاظاً على أمانه."
-        : "تم حفظ التغييرات في قاعدة البيانات بنجاح.");
+      setMetaAccessToken("");
+      setToast("تم حفظ التغييرات في قاعدة البيانات بنجاح.");
       setToastIsError(false);
       if (toastTimer.current) clearTimeout(toastTimer.current);
       toastTimer.current = setTimeout(() => setToast(""), 4500);
@@ -206,6 +210,7 @@ export default function SettingsClient({ cloudinaryConfigured }: SettingsClientP
           </div>
           <div className="mt-5 border-t border-[#f0ede7] pt-5">
             <Link href="/" className="flex items-center gap-2 rounded-xl px-3 py-2 text-xs font-semibold text-[#6d766e] hover:bg-[#f7f6f2]"><ArrowRight size={15} /> العودة إلى لوحة التحكم</Link>
+            <AuthLogoutButton />
           </div>
         </aside>
 
@@ -219,9 +224,12 @@ export default function SettingsClient({ cloudinaryConfigured }: SettingsClientP
                   <h1 className="text-sm font-bold text-[#2a3b32] sm:mt-1 sm:text-base">إعدادات المتجر</h1>
                 </div>
               </div>
-              <Link href="/" className="inline-flex items-center gap-2 rounded-xl border border-[#e9e7e0] bg-white px-3 py-2.5 text-xs font-semibold text-[#53645a] transition hover:border-[#cbd8cd]">
-                <LayoutDashboard size={15} /><span className="hidden sm:inline">لوحة التحكم</span><ChevronLeft size={14} />
-              </Link>
+              <div className="flex items-center gap-2">
+                <AuthLogoutButton compact />
+                <Link href="/" className="inline-flex items-center gap-2 rounded-xl border border-[#e9e7e0] bg-white px-3 py-2.5 text-xs font-semibold text-[#53645a] transition hover:border-[#cbd8cd]">
+                  <LayoutDashboard size={15} /><span className="hidden sm:inline">لوحة التحكم</span><ChevronLeft size={14} />
+                </Link>
+              </div>
             </div>
           </header>
 
@@ -261,16 +269,16 @@ export default function SettingsClient({ cloudinaryConfigured }: SettingsClientP
               </section>
 
               <section id="platforms" className="scroll-mt-24 overflow-hidden rounded-[22px] border border-[#ece9e2] bg-white shadow-[0_4px_24px_rgba(42,53,44,0.035)]">
-                <SectionHeading icon={KeyRound} title="ربط منصات التواصل" description="جهّزي بيانات الربط للنشر المباشر عند تفعيل واجهات المنصات." trailing={<span className="rounded-full bg-[#f5f2e9] px-2.5 py-1 text-[10px] font-semibold text-[#8c754a]">إعداد مستقبلي</span>} />
+                <SectionHeading icon={KeyRound} title="ربط منصات التواصل" description="جهّزي حسابات Meta للنشر المباشر على صفحة Facebook وحساب Instagram التجاري." trailing={<span className="rounded-full bg-[#edf3ff] px-2.5 py-1 text-[10px] font-semibold text-[#426b9a]">Facebook + Instagram</span>} />
                 <div className="space-y-5 px-5 py-5 sm:px-7 sm:py-6">
                   <div className="grid gap-5 sm:grid-cols-2">
-                    <Field label="Facebook Page ID" htmlFor="facebook-page-id" hint="معرّف صفحة المتجر">
+                    <Field label="Facebook Page ID" htmlFor="facebook-page-id" hint="المعرّف الرقمي لصفحة المتجر">
                       <div className="relative">
                         <span className="pointer-events-none absolute right-3.5 top-1/2 grid size-6 -translate-y-1/2 place-items-center rounded-md bg-[#edf3ff] text-sm font-bold text-[#1877f2]">f</span>
                         <input id="facebook-page-id" value={settings.facebookPageId} onChange={(event) => updateSetting("facebookPageId", event.target.value)} className={`${inputClass} pr-12`} placeholder="مثال: 1029384756" autoComplete="off" />
                       </div>
                     </Field>
-                    <Field label="Instagram Account ID" htmlFor="instagram-account-id" hint="معرّف حساب Instagram Business">
+                    <Field label="Instagram Account ID" htmlFor="instagram-account-id" hint="المعرّف الرقمي أو اسم المستخدم للحساب المرتبط">
                       <div className="relative">
                         <Camera size={16} className="pointer-events-none absolute right-3.5 top-1/2 -translate-y-1/2 text-[#bd647b]" />
                         <input id="instagram-account-id" value={settings.instagramAccountId} onChange={(event) => updateSetting("instagramAccountId", event.target.value)} className={`${inputClass} pr-10`} placeholder="معرّف الحساب التجاري" autoComplete="off" />
@@ -317,17 +325,17 @@ export default function SettingsClient({ cloudinaryConfigured }: SettingsClientP
                     </Field>
                   </div>
 
-                  <Field label="Facebook Access Token" htmlFor="facebook-access-token" hint="يُخفى أثناء الإدخال ولا يُحفظ في المتصفح">
+                  <Field label="Meta Page Access Token" htmlFor="meta-access-token" hint={metaAccessTokenConfigured ? "رمز محفوظ ومشفّر — اتركيه فارغاً للاحتفاظ به" : "يُشفّر على الخادم قبل التخزين"}>
                     <div className="relative">
                       <LockKeyhole size={16} className="pointer-events-none absolute right-3.5 top-1/2 -translate-y-1/2 text-[#92978e]" />
-                      <input id="facebook-access-token" type={showAccessToken ? "text" : "password"} value={facebookAccessToken} onChange={(event) => setFacebookAccessToken(event.target.value)} className={`${inputClass} px-11`} placeholder="أدخلي رمز الوصول عند تفعيل التكامل" autoComplete="new-password" />
+                      <input id="meta-access-token" type={showAccessToken ? "text" : "password"} value={metaAccessToken} onChange={(event) => setMetaAccessToken(event.target.value)} className={`${inputClass} px-11`} placeholder={metaAccessTokenConfigured ? "أدخلي رمزاً جديداً للاستبدال" : "أدخلي Page Access Token"} autoComplete="new-password" />
                       <button type="button" onClick={() => setShowAccessToken((visible) => !visible)} className="absolute left-3 top-1/2 -translate-y-1/2 rounded-md p-1 text-[#8f948c] hover:bg-[#f4f3ef]" aria-label={showAccessToken ? "إخفاء رمز الوصول" : "إظهار رمز الوصول"}>{showAccessToken ? <EyeOff size={16} /> : <Eye size={16} />}</button>
                     </div>
                   </Field>
 
                   <div className="flex items-start gap-2.5 rounded-xl border border-[#eee9dc] bg-[#fbf9f3] px-3.5 py-3 text-[11px] leading-6 text-[#817a68]">
                     <ShieldCheck size={16} className="mt-0.5 shrink-0 text-[#8e876d]" />
-                    <p>رموز YouTube وSnapchat تُحفظ في قاعدة البيانات ولا تُعاد إلى المتصفح؛ اتركي حقل الرمز فارغاً للاحتفاظ بالرمز المحفوظ. رموز Facebook غير مدعومة للحفظ في هذه الصفحة.</p>
+                    <p>يُخزّن رمز Meta مشفّراً ولا يُعاد إلى المتصفح. يجب أن يكون Page Access Token بصلاحيات إدارة منشورات الصفحة ونشر محتوى Instagram؛ اتركي الحقل فارغاً للاحتفاظ بالرمز الحالي.</p>
                   </div>
                 </div>
               </section>

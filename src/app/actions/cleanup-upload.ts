@@ -1,8 +1,11 @@
 "use server";
 
 import { cloudinary } from "@/lib/cloudinary";
+import { isAdminAuthenticated } from "@/lib/admin-auth";
 
 export async function cleanupFailedUpload(publicId: string, mediaUrl: string): Promise<boolean> {
+  if (!(await isAdminAuthenticated())) return false;
+
   if (typeof publicId !== "string" || !publicId.startsWith("bayt-ward-dashboard/")) {
     return false;
   }

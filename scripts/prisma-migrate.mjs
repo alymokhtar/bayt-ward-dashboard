@@ -18,9 +18,11 @@ if (!process.env.DIRECT_URL) {
 }
 
 const prismaCli = resolve(projectRoot, "node_modules/prisma/build/index.js");
+const migrationCommand = process.argv[2] === "deploy" ? "deploy" : "dev";
+const commandArgs = migrationCommand === "deploy" ? process.argv.slice(3) : process.argv.slice(2);
 const result = spawnSync(
   process.execPath,
-  [prismaCli, "migrate", "dev", ...process.argv.slice(2)],
+  [prismaCli, "migrate", migrationCommand, ...commandArgs],
   { cwd: projectRoot, env: process.env, stdio: "inherit" },
 );
 

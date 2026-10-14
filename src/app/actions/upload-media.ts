@@ -2,6 +2,7 @@
 
 import type { UploadApiResponse } from "cloudinary";
 import { cloudinary } from "@/lib/cloudinary";
+import { isAdminAuthenticated } from "@/lib/admin-auth";
 
 const MAX_FILE_SIZE = 10 * 1024 * 1024;
 const ALLOWED_TYPES = new Set([
@@ -19,6 +20,10 @@ export type UploadMediaResult =
   | { success: false; error: string };
 
 export async function uploadMedia(formData: FormData): Promise<UploadMediaResult> {
+  if (!(await isAdminAuthenticated())) {
+    return { success: false, error: "انتهت جلسة الدخول. سجّلي الدخول مجدداً." };
+  }
+
   const file = formData.get("file");
 
   if (!(file instanceof File) || file.size === 0) {
