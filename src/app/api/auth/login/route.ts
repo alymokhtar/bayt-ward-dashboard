@@ -110,7 +110,15 @@ export async function POST(request: Request) {
       maxAge: ADMIN_SESSION_TTL_SECONDS,
     });
     return response;
-  } catch {
+  } catch (error) {
+    const errorCode =
+      error && typeof error === "object" && "code" in error && typeof error.code === "string"
+        ? error.code
+        : undefined;
+    console.error("Admin login failed.", {
+      name: error instanceof Error ? error.name : "UnknownError",
+      ...(errorCode ? { code: errorCode } : {}),
+    });
     return NextResponse.json(
       { error: "تعذّر إكمال تسجيل الدخول. تحققي من إعداد الخادم وقاعدة البيانات." },
       { status: 503, headers: { "Cache-Control": "no-store" } },
