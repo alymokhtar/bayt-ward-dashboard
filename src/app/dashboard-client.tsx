@@ -38,6 +38,7 @@ import { cleanupFailedUpload } from "@/app/actions/cleanup-upload";
 import { deletePost } from "@/app/actions/delete-post";
 import { uploadMedia } from "@/app/actions/upload-media";
 import BrandMark from "@/components/brand-mark";
+import SocialLinks from "@/components/social-links";
 import SocialPlatformIcon from "@/components/social-platform-icon";
 
 type DashboardStats = {
@@ -754,7 +755,10 @@ export default function DashboardClient({ initialPosts, initialStats, databaseAv
             </div>
 
             <HistorySection posts={filteredPosts} databaseAvailable={databaseAvailable} searchTerm={searchTerm} onDelete={handleDeletePost} deletingPostId={deletingPostId} actionError={historyError} actionNotice={historyNotice} />
-            <footer className="px-1 py-7 text-center text-[10px] text-[#a2a39b]">صُنع بكل حب في بيت ورد <span className="text-[#c47f78]">♥</span></footer>
+            <footer id="social-links" className="px-1 py-7 text-center text-[10px] text-[#a2a39b]">
+              <p>صُنع بكل حب في بيت ورد <span className="text-[#c47f78]">♥</span></p>
+              <SocialLinks />
+            </footer>
           </div>
         </main>
       </div>
@@ -780,7 +784,11 @@ export default function DashboardClient({ initialPosts, initialStats, databaseAv
               <MobileDrawerLink href="/channels" label="قنوات النشر" icon={Send} onClick={() => setMobileMenuOpen(false)} />
               <MobileDrawerLink href="/settings" label="الإعدادات" icon={Settings2} onClick={() => setMobileMenuOpen(false)} />
             </div>
-            <p className="mt-auto text-center text-[10px] text-[#a2a39b]">صُنع بكل حب في بيت ورد ♥</p>
+            <div className="mt-auto border-t border-[#f0ede7] pt-5">
+              <p className="text-center text-[11px] font-semibold text-[#59635b]">حسابات بيت ورد</p>
+              <SocialLinks />
+            </div>
+            <p className="mt-5 text-center text-[10px] text-[#a2a39b]">صُنع بكل حب في بيت ورد ♥</p>
           </nav>
         </div>
       ) : null}
