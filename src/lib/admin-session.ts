@@ -38,8 +38,9 @@ export function isValidAdminSession(token: string | undefined) {
 
 export function isValidAdminPassword(password: string) {
   const expected = process.env.ADMIN_PASSWORD;
-  if (!expected || expected.length < 16) {
-    throw new Error("ADMIN_PASSWORD must contain at least 16 characters.");
+  const minimumLength = process.env.NODE_ENV === "development" ? 6 : 16;
+  if (!expected || expected.length < minimumLength) {
+    throw new Error(`ADMIN_PASSWORD must contain at least ${minimumLength} characters.`);
   }
 
   const key = sessionSecret();
