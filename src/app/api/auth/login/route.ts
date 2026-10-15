@@ -4,6 +4,7 @@ import { prisma } from "@/lib/prisma";
 import {
   ADMIN_SESSION_COOKIE,
   ADMIN_SESSION_TTL_SECONDS,
+  assertAdminAuthConfiguration,
   createAdminSession,
   isValidAdminPassword,
 } from "@/lib/admin-session";
@@ -60,12 +61,11 @@ export async function POST(request: Request) {
     );
   }
 
+  let stage = "configuration";
   try {
-    const secret = process.env.ADMIN_SESSION_SECRET;
-    if (!secret || secret.length < 32) {
-      throw new Error("ADMIN_SESSION_SECRET must contain at least 32 characters.");
-    }
+    const secret = assertAdminAuthConfiguration();
     const ipHash = createHash("sha256").update(`${secret}:${ip}`).digest("hex");
+    stage = "rate-limit-lookup";
     const attempt = await prisma.adminLoginAttempt.findUnique({ where: { ipHash } });
     if (attempt?.lockedUntil && attempt.lockedUntil > new Date()) {
       return NextResponse.json(
@@ -75,6 +75,7 @@ export async function POST(request: Request) {
     }
 
     if (!isValidAdminPassword(password)) {
+      stage = "rate-limit-update";
       await prisma.$executeRaw`
         INSERT INTO "AdminLoginAttempt" ("ipHash", "failedAttempts", "windowStartedAt", "lockedUntil", "updatedAt")
         VALUES (${ipHash}, 1, NOW(), NULL, NOW())
@@ -100,7 +101,9 @@ export async function POST(request: Request) {
       );
     }
 
+    stage = "rate-limit-clear";
     await prisma.adminLoginAttempt.deleteMany({ where: { ipHash } });
+    stage = "session-create";
     const response = NextResponse.json({ success: true }, { headers: { "Cache-Control": "no-store" } });
     response.cookies.set(ADMIN_SESSION_COOKIE, createAdminSession(), {
       httpOnly: true,
@@ -116,6 +119,7 @@ export async function POST(request: Request) {
         ? error.code
         : undefined;
     console.error("Admin login failed.", {
+      stage,
       name: error instanceof Error ? error.name : "UnknownError",
       ...(errorCode ? { code: errorCode } : {}),
     });

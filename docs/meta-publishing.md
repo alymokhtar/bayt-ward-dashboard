@@ -6,7 +6,7 @@ The dashboard currently sends selected Facebook Page and Instagram Business post
 
 Configure these values in `.env.local` and in the production host's secret manager. Never commit actual values:
 
-- `ADMIN_PASSWORD`: a unique administrator password with at least 16 characters.
+- `ADMIN_PASSWORD`: a unique administrator password with at least 6 characters. Six-character passwords are substantially easier to guess; use a long, unique password for production.
 - `ADMIN_SESSION_SECRET`: a cryptographically random secret with at least 32 characters. Generate one with `node -e "console.log(require('node:crypto').randomBytes(48).toString('base64url'))"`. Rotating it invalidates active admin sessions.
 - `META_TOKEN_ENCRYPTION_KEY`: a base64-encoded 32-byte key. Generate one with `node -e "console.log(require('node:crypto').randomBytes(32).toString('base64'))"`. Back it up securely; changing it makes the stored Meta token undecryptable.
 - `META_GRAPH_API_VERSION`: the supported version configured for the Meta app, in `vNN.N` format.

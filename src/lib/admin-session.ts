@@ -2,11 +2,21 @@ import { createHmac, timingSafeEqual } from "node:crypto";
 
 export const ADMIN_SESSION_COOKIE = "bayt_ward_admin";
 export const ADMIN_SESSION_TTL_SECONDS = 60 * 60 * 12;
+const ADMIN_PASSWORD_MIN_LENGTH = 6;
 
 function sessionSecret() {
   const secret = process.env.ADMIN_SESSION_SECRET;
   if (!secret || secret.length < 32) {
     throw new Error("ADMIN_SESSION_SECRET must contain at least 32 characters.");
+  }
+  return secret;
+}
+
+export function assertAdminAuthConfiguration() {
+  const secret = sessionSecret();
+  const password = process.env.ADMIN_PASSWORD;
+  if (!password || password.length < ADMIN_PASSWORD_MIN_LENGTH) {
+    throw new Error(`ADMIN_PASSWORD must contain at least ${ADMIN_PASSWORD_MIN_LENGTH} characters.`);
   }
   return secret;
 }
@@ -38,9 +48,8 @@ export function isValidAdminSession(token: string | undefined) {
 
 export function isValidAdminPassword(password: string) {
   const expected = process.env.ADMIN_PASSWORD;
-  const minimumLength = process.env.NODE_ENV === "development" ? 6 : 16;
-  if (!expected || expected.length < minimumLength) {
-    throw new Error(`ADMIN_PASSWORD must contain at least ${minimumLength} characters.`);
+  if (!expected || expected.length < ADMIN_PASSWORD_MIN_LENGTH) {
+    throw new Error(`ADMIN_PASSWORD must contain at least ${ADMIN_PASSWORD_MIN_LENGTH} characters.`);
   }
 
   const key = sessionSecret();
