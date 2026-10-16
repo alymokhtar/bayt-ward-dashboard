@@ -6,6 +6,7 @@ export function proxy(request: NextRequest) {
   if (
     pathname === "/api/auth/login" ||
     pathname === "/api/auth/logout" ||
+    pathname === "/api/auth/youtube/callback" ||
     request.headers.has("next-action")
   ) {
     return NextResponse.next();

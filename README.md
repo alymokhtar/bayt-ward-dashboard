@@ -22,9 +22,11 @@ This project uses [`next/font`](https://nextjs.org/docs/app/building-your-applic
 
 ## YouTube video uploads
 
-Configure `YOUTUBE_CLIENT_ID`, `YOUTUBE_CLIENT_SECRET`, and `YOUTUBE_REDIRECT_URI` on the server. The authenticated admin can upload a video with a `multipart/form-data` POST to `/api/youtube/upload`. Include `file`, `title`, `description`, `accessToken`, and `refreshToken`; `tags` is optional (comma-separated, repeated, or a JSON array), and `privacyStatus` may be `public` or `unlisted` (default: `public`). The route refreshes the access token with the supplied refresh token before uploading.
+Configure `YOUTUBE_CLIENT_ID`, `YOUTUBE_CLIENT_SECRET`, and `YOUTUBE_REDIRECT_URI` (the exact callback URL ending in `/api/auth/youtube/callback`) on the server. The authenticated admin can connect a channel from Settings, then choose YouTube while creating a post. YouTube OAuth tokens are encrypted at rest using the configured `META_TOKEN_ENCRYPTION_KEY` (base64-encoded 32-byte key material). The standalone upload endpoint accepts multipart fields `file`, `title`, and `description`; `tags` is optional (comma-separated, repeated, or a JSON array), and `privacyStatus` may be `public` or `unlisted` (default: `unlisted`). It loads and refreshes stored credentials server-side.
 
-The response contains `videoId` and the YouTube watch `url`. Keep OAuth tokens secret and send the request only over HTTPS outside local development.
+Keep `META_TOKEN_ENCRYPTION_KEY` backed up and out of source control; changing it makes saved Meta and YouTube tokens unreadable. Apply database changes with `npx prisma migrate deploy` before deploying the new app version. The migration clears any old manually entered YouTube access token, so reconnect the channel through OAuth after migration.
+
+The standalone endpoint responds with `videoId` and the YouTube watch `url`. Dashboard video uploads are limited to 100 MiB; file size limits for deployments may be lower than the platform's YouTube API limit. Use HTTPS in deployed environments.
 
 ## Learn More
 

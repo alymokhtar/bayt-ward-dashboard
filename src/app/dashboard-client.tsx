@@ -255,21 +255,28 @@ function HistorySection({ posts, databaseAvailable, searchTerm, onDelete, onRetr
                     <span>{date}</span><span aria-hidden="true">·</span>
                     {post.platforms.map((platform) => <span key={platform} className="capitalize">{platform}</span>)}
                   </div>
-                  {post.platforms.some((platform) => platform === "facebook" || platform === "instagram") ? (
+                  {post.platforms.some((platform) => platform === "facebook" || platform === "instagram" || platform === "youtube") ? (
                     <div className="mt-2 space-y-1.5">
-                      {(["facebook", "instagram"] as const).map((platform) => {
+                      {(["facebook", "instagram", "youtube"] as const).map((platform) => {
                         if (!post.platforms.includes(platform)) return null;
-                        const status = platform === "facebook" ? post.facebookStatus : post.instagramStatus;
-                        const error = platform === "facebook" ? post.facebookError : post.instagramError;
+                        const status = platform === "facebook"
+                          ? post.facebookStatus
+                          : platform === "instagram" ? post.instagramStatus : post.youtubeStatus;
+                        const error = platform === "facebook"
+                          ? post.facebookError
+                          : platform === "instagram" ? post.instagramError : post.youtubeError;
                         return (
                           <p key={platform} className="text-[10px] leading-5 text-[#777f77]">
-                            <span className="font-semibold">{platform === "facebook" ? "Facebook" : "Instagram"}:</span>{" "}
+                            <span className="font-semibold">{platform === "facebook" ? "Facebook" : platform === "instagram" ? "Instagram" : "YouTube"}:</span>{" "}
                             {status ? status === "UNKNOWN" ? "تحققي من الحساب قبل إعادة المحاولة" : STATUS_LABELS[status] : "لم يبدأ النشر"}
+                            {platform === "youtube" && post.youtubeVideoUrl ? (
+                              <> · <a href={post.youtubeVideoUrl} target="_blank" rel="noreferrer" className="font-semibold text-[#286355] underline">مشاهدة الفيديو</a></>
+                            ) : null}
                             {error ? <span className="block text-[#a44f46]">{error}</span> : null}
                           </p>
                         );
                       })}
-                      {post.platforms.some((platform) => platform !== "facebook" && platform !== "instagram") ? (
+                      {post.platforms.some((platform) => platform !== "facebook" && platform !== "instagram" && platform !== "youtube") ? (
                         <p className="text-[10px] text-[#a07035]">بقية المنصات غير مفعّلة للنشر التلقائي بعد.</p>
                       ) : null}
                     </div>
@@ -277,7 +284,7 @@ function HistorySection({ posts, databaseAvailable, searchTerm, onDelete, onRetr
                 </div>
                 <div className="col-span-2 flex items-center justify-between gap-3 pr-[68px] sm:col-span-1 sm:justify-end sm:pr-0">
                   <StatusPill status={post.status} />
-                  {post.status === "FAILED" && post.platforms.some((platform) => (platform === "facebook" && (post.facebookStatus === "FAILED" || post.facebookStatus === "PENDING")) || (platform === "instagram" && (post.instagramStatus === "FAILED" || post.instagramStatus === "PENDING"))) ? (
+                  {post.platforms.some((platform) => (platform === "facebook" && (post.facebookStatus === "FAILED" || post.facebookStatus === "PENDING")) || (platform === "instagram" && (post.instagramStatus === "FAILED" || post.instagramStatus === "PENDING")) || (platform === "youtube" && (post.youtubeStatus === "FAILED" || post.youtubeStatus === "PENDING"))) ? (
                     <button
                       type="button"
                       onClick={() => onRetryPublish(post)}
@@ -313,6 +320,10 @@ export default function DashboardClient({ initialPosts, initialStats, databaseAv
   const [stats, setStats] = useState(initialStats);
   const [selectedFile, setSelectedFile] = useState<File | null>(null);
   const [caption, setCaption] = useState("");
+  const [youtubeTitle, setYoutubeTitle] = useState("");
+  const [youtubeDescription, setYoutubeDescription] = useState("");
+  const [youtubeTags, setYoutubeTags] = useState("");
+  const [youtubePrivacyStatus, setYoutubePrivacyStatus] = useState<"public" | "unlisted">("unlisted");
   const [selectedPlatforms, setSelectedPlatforms] = useState<string[]>(["instagram"]);
   const [isDragging, setIsDragging] = useState(false);
   const [isSaving, setIsSaving] = useState(false);
@@ -471,8 +482,13 @@ export default function DashboardClient({ initialPosts, initialStats, databaseAv
       setError("الملف غير مدعوم. اختاري صورة أو فيديو.");
       return;
     }
-    if (file.size > 10 * 1024 * 1024) {
-      setError("الحد الأقصى لحجم الملف هو 10 ميجابايت.");
+    const maxSize = file.type.startsWith("video/") && selectedPlatforms.includes("youtube")
+      ? 100 * 1024 * 1024
+      : 10 * 1024 * 1024;
+    if (file.size > maxSize) {
+      setError(maxSize > 10 * 1024 * 1024
+        ? "الحد الأقصى لحجم فيديو YouTube هو 100 ميجابايت."
+        : "الحد الأقصى لحجم الملف هو 10 ميجابايت.");
       return;
     }
     if (objectUrlRef.current) URL.revokeObjectURL(objectUrlRef.current);
@@ -504,6 +520,28 @@ export default function DashboardClient({ initialPosts, initialStats, databaseAv
       setError("اختاري منصة واحدة على الأقل.");
       return;
     }
+    if (selectedPlatforms.includes("youtube")) {
+      if (!selectedFile.type.startsWith("video/")) {
+        setError("اختاري ملف فيديو للنشر على YouTube.");
+        return;
+      }
+      if (selectedFile.size > 100 * 1024 * 1024) {
+        setError("الحد الأقصى لحجم فيديو YouTube هو 100 ميجابايت.");
+        return;
+      }
+      if (!youtubeTitle.trim() || youtubeTitle.trim().length > 100) {
+        setError("عنوان YouTube مطلوب ويجب ألا يتجاوز 100 حرف.");
+        return;
+      }
+      if (youtubeDescription.length > 5000) {
+        setError("وصف YouTube يجب ألا يتجاوز 5000 حرف.");
+        return;
+      }
+      if (youtubeTags.split(",").map((tag) => tag.trim()).join("").length > 500) {
+        setError("مجموع أحرف وسوم YouTube يجب ألا يتجاوز 500 حرف.");
+        return;
+      }
+    }
 
     setIsSaving(true);
     try {
@@ -533,6 +571,7 @@ export default function DashboardClient({ initialPosts, initialStats, databaseAv
 
       const formData = new FormData();
       formData.set("file", selectedFile);
+      for (const platform of selectedPlatforms) formData.append("platforms", platform);
       const upload = await uploadMedia(formData);
       if (!upload.success) {
         setError(upload.error);
@@ -545,6 +584,14 @@ export default function DashboardClient({ initialPosts, initialStats, databaseAv
         cloudinaryPublicId: upload.publicId,
         mediaType: selectedFile.type.startsWith("video/") ? "video" : "image",
         platforms: selectedPlatforms,
+        ...(selectedPlatforms.includes("youtube")
+          ? {
+              youtubeTitle: youtubeTitle.trim(),
+              youtubeDescription,
+              youtubeTags: youtubeTags.split(",").map((tag) => tag.trim()).filter(Boolean),
+              youtubePrivacyStatus,
+            }
+          : {}),
       });
 
       if (!result.success) {
@@ -556,7 +603,7 @@ export default function DashboardClient({ initialPosts, initialStats, databaseAv
       }
 
       let savedPost = result.post;
-      if (selectedPlatforms.some((platform) => platform === "facebook" || platform === "instagram")) {
+      if (selectedPlatforms.some((platform) => platform === "facebook" || platform === "instagram" || platform === "youtube")) {
         try {
           const publishResponse = await fetch(`/api/posts/${encodeURIComponent(savedPost.id)}/publish`, {
             method: "POST",
@@ -571,18 +618,18 @@ export default function DashboardClient({ initialPosts, initialStats, databaseAv
           if (!publishResponse.ok) {
             const message = publishResult && typeof publishResult === "object" && "error" in publishResult && typeof publishResult.error === "string"
               ? publishResult.error
-              : "حُفظ المنشور لكن تعذّر نشره على Meta.";
+              : "حُفظ المنشور لكن تعذّر نشره على إحدى المنصات.";
             setError(message);
           } else if (savedPost.status === "PUBLISHED") {
-            setNotice("تم نشر المنشور بنجاح على المنصات المحددة من Meta.");
+            setNotice("تم نشر المنشور بنجاح على المنصات المحددة.");
           } else {
             setNotice("تم حفظ المنشور. راجعي حالة النشر لكل منصة في سجل المنشورات.");
           }
         } catch {
-          setError("حُفظ المنشور، لكن لم يصل ردّ النشر من Meta. تحققي من سجل المنشورات قبل إعادة المحاولة.");
+          setError("حُفظ المنشور، لكن لم يصل ردّ النشر. تحققي من سجل المنشورات قبل إعادة المحاولة.");
         }
       } else {
-        setNotice("تمت إضافة المنشور إلى قائمة الانتظار؛ النشر المباشر متاح حالياً لفيسبوك وإنستجرام فقط.");
+        setNotice("تمت إضافة المنشور إلى قائمة الانتظار؛ لم يتم اختيار منصة نشر مباشر.");
       }
 
       setPosts((current) => [savedPost, ...current].slice(0, 8));
@@ -594,6 +641,9 @@ export default function DashboardClient({ initialPosts, initialStats, databaseAv
       }));
       clearSelectedFile();
       setCaption("");
+      setYoutubeTitle("");
+      setYoutubeDescription("");
+      setYoutubeTags("");
     } catch {
       setError("حدث خطأ غير متوقع. يرجى المحاولة مرة أخرى.");
     } finally {
@@ -763,6 +813,44 @@ export default function DashboardClient({ initialPosts, initialStats, databaseAv
                       <span className="absolute bottom-3 left-3 rounded-md bg-white/90 px-2 py-1 text-[10px] text-[#a0a199]">{caption.length} / 2200</span>
                     </div>
                   </div>
+
+                  {selectedPlatforms.includes("youtube") ? (
+                    <div className="space-y-4 rounded-2xl border border-[#f0dcdc] bg-[#fffafa] p-4 sm:p-5">
+                      <div>
+                        <h3 className="text-sm font-bold text-[#3b463f]">تفاصيل فيديو YouTube</h3>
+                        <p className="mt-1 text-[11px] text-[#92958d]">اختاري فيديو حتى 100 ميجابايت. العنوان مطلوب والوصف اختياري.</p>
+                      </div>
+                      <div>
+                        <label htmlFor="youtube-title" className="mb-2 block text-xs font-semibold text-[#536057]">عنوان الفيديو</label>
+                        <input id="youtube-title" value={youtubeTitle} onChange={(event) => setYoutubeTitle(event.target.value.slice(0, 100))} maxLength={100} required
+                          className="w-full rounded-xl border border-[#e9e8e1] bg-white px-3.5 py-3 text-sm outline-none focus:border-[#a3bba7] focus:ring-4 focus:ring-[#eaf1eb]"
+                          placeholder="عنوان فيديو YouTube" />
+                        <p className="mt-1 text-left text-[10px] text-[#a0a199]">{youtubeTitle.length} / 100</p>
+                      </div>
+                      <div>
+                        <label htmlFor="youtube-description" className="mb-2 block text-xs font-semibold text-[#536057]">وصف الفيديو</label>
+                        <textarea id="youtube-description" value={youtubeDescription} onChange={(event) => setYoutubeDescription(event.target.value.slice(0, 5000))} maxLength={5000} rows={3}
+                          className="w-full resize-y rounded-xl border border-[#e9e8e1] bg-white px-3.5 py-3 text-sm leading-6 outline-none focus:border-[#a3bba7] focus:ring-4 focus:ring-[#eaf1eb]"
+                          placeholder="وصف فيديو YouTube" />
+                      </div>
+                      <div className="grid gap-4 sm:grid-cols-2">
+                        <div>
+                          <label htmlFor="youtube-tags" className="mb-2 block text-xs font-semibold text-[#536057]">الوسوم (مفصولة بفواصل)</label>
+                          <input id="youtube-tags" value={youtubeTags} onChange={(event) => setYoutubeTags(event.target.value)} maxLength={500}
+                            className="w-full rounded-xl border border-[#e9e8e1] bg-white px-3.5 py-3 text-sm outline-none focus:border-[#a3bba7] focus:ring-4 focus:ring-[#eaf1eb]"
+                            placeholder="زهور, تنسيق, بيت ورد" />
+                        </div>
+                        <div>
+                          <label htmlFor="youtube-privacy" className="mb-2 block text-xs font-semibold text-[#536057]">خصوصية الفيديو</label>
+                          <select id="youtube-privacy" value={youtubePrivacyStatus} onChange={(event) => setYoutubePrivacyStatus(event.target.value === "public" ? "public" : "unlisted")}
+                            className="w-full rounded-xl border border-[#e9e8e1] bg-white px-3.5 py-3 text-sm outline-none focus:border-[#a3bba7]">
+                            <option value="unlisted">غير مدرج</option>
+                            <option value="public">عام</option>
+                          </select>
+                        </div>
+                      </div>
+                    </div>
+                  ) : null}
 
                   <div id="platforms">
                     <div className="mb-3 flex items-center justify-between gap-3">

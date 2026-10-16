@@ -3,16 +3,17 @@ import { NextResponse } from "next/server";
 import { isAdminAuthenticated } from "@/lib/admin-auth";
 import { decryptMetaToken } from "@/lib/meta-token";
 import { MetaGraphError, publishFacebookPost, publishInstagramPost } from "@/lib/meta-graph";
+import { downloadCloudinaryVideo, uploadYouTubeVideo, YouTubeUploadError } from "@/lib/youtube";
 import { prisma } from "@/lib/prisma";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
-export const maxDuration = 120;
+export const maxDuration = 300;
 
-type Platform = "facebook" | "instagram";
+type Platform = "facebook" | "instagram" | "youtube";
 
 function jsonError(message: string, status: number) {
-  return NextResponse.json({ error: message }, { status });
+  return NextResponse.json({ error: message }, { status, headers: { "Cache-Control": "no-store" } });
 }
 
 function originIsValid(request: Request) {
@@ -41,6 +42,14 @@ function toSavedPost(post: {
   status: PostStatus;
   facebookStatus: PostStatus | null;
   instagramStatus: PostStatus | null;
+  youtubeStatus: PostStatus | null;
+  youtubeTitle: string;
+  youtubeDescription: string;
+  youtubeTags: unknown;
+  youtubePrivacyStatus: string;
+  youtubeVideoId: string | null;
+  youtubeVideoUrl: string | null;
+  youtubeError: string | null;
   facebookError: string | null;
   instagramError: string | null;
   createdAt: Date;
@@ -51,25 +60,41 @@ function toSavedPost(post: {
     platforms: Array.isArray(post.platforms)
       ? post.platforms.filter((platform): platform is string => typeof platform === "string")
       : [],
+    youtubeTags: Array.isArray(post.youtubeTags)
+      ? post.youtubeTags.filter((tag): tag is string => typeof tag === "string")
+      : [],
+    youtubePrivacyStatus: post.youtubePrivacyStatus === "public" ? "public" as const : "unlisted" as const,
     createdAt: post.createdAt.toISOString(),
   };
 }
 
-async function setConfigurationFailure(
-  postId: string,
-  retryablePlatforms: Platform[],
-  message: string,
-) {
-  const data = {
-    status: PostStatus.FAILED,
-    ...(retryablePlatforms.includes("facebook")
-      ? { facebookStatus: PostStatus.FAILED, facebookError: message }
-      : {}),
-    ...(retryablePlatforms.includes("instagram")
-      ? { instagramStatus: PostStatus.FAILED, instagramError: message }
-      : {}),
-  };
-  await prisma.post.update({ where: { id: postId }, data });
+function isRetryable(status: PostStatus | null) {
+  return status === null || status === PostStatus.PENDING || status === PostStatus.FAILED;
+}
+
+function currentStatus(post: {
+  platforms: unknown;
+  facebookStatus: PostStatus | null;
+  instagramStatus: PostStatus | null;
+  youtubeStatus: PostStatus | null;
+}) {
+  const platforms = Array.isArray(post.platforms)
+    ? post.platforms.filter((platform): platform is string => typeof platform === "string")
+    : [];
+  const statuses = platforms.flatMap((platform) => {
+    if (platform === "facebook") return post.facebookStatus ? [post.facebookStatus] : [];
+    if (platform === "instagram") return post.instagramStatus ? [post.instagramStatus] : [];
+    if (platform === "youtube") return post.youtubeStatus ? [post.youtubeStatus] : [];
+    return [];
+  });
+  if (statuses.includes(PostStatus.PUBLISHING)) return PostStatus.PUBLISHING;
+  if (statuses.includes(PostStatus.FAILED)) return PostStatus.FAILED;
+  if (statuses.includes(PostStatus.UNKNOWN)) return PostStatus.UNKNOWN;
+  const hasUnsupportedPlatform = platforms.some(
+    (platform) => platform !== "facebook" && platform !== "instagram" && platform !== "youtube",
+  );
+  if (hasUnsupportedPlatform || statuses.length !== platforms.length) return PostStatus.PENDING;
+  return PostStatus.PUBLISHED;
 }
 
 export async function POST(
@@ -84,36 +109,34 @@ export async function POST(
 
   let post;
   try {
-    post = await prisma.post.findUnique({
-      where: { id: postId },
-      select: {
-        id: true,
-        caption: true,
-        mediaUrl: true,
-        cloudinaryPublicId: true,
-        mediaType: true,
-        platforms: true,
-        status: true,
-        facebookStatus: true,
-        instagramStatus: true,
-        facebookPostId: true,
-        instagramPostId: true,
-        facebookError: true,
-        instagramError: true,
-        createdAt: true,
-      },
-    });
+    post = await prisma.post.findUnique({ where: { id: postId } });
   } catch {
     return jsonError("تعذّر تحميل المنشور من قاعدة البيانات.", 503);
   }
   if (!post) return jsonError("المنشور غير موجود.", 404);
 
-  const selectedPlatforms = Array.isArray(post.platforms)
-    ? post.platforms.filter((platform): platform is Platform => platform === "facebook" || platform === "instagram")
+  const platforms = Array.isArray(post.platforms)
+    ? post.platforms.filter((platform): platform is string => typeof platform === "string")
     : [];
-  const targets = [...new Set(selectedPlatforms)];
-  if (targets.length === 0) return jsonError("لا يحتوي المنشور على منصة Meta قابلة للنشر.", 400);
-  if (post.status === PostStatus.PUBLISHING) return jsonError("النشر قيد التنفيذ بالفعل.", 409);
+  const targets = [...new Set(platforms.filter(
+    (platform): platform is Platform =>
+      platform === "facebook" || platform === "instagram" || platform === "youtube",
+  ))];
+  if (targets.length === 0) {
+    return jsonError("لا يحتوي المنشور على منصة مدعومة للنشر المباشر.", 400);
+  }
+  if (post.status === PostStatus.PUBLISHING) {
+    return jsonError("النشر قيد التنفيذ بالفعل.", 409);
+  }
+
+  const pendingTargets = targets.filter((platform) => isRetryable(
+    platform === "facebook"
+      ? post.facebookStatus
+      : platform === "instagram" ? post.instagramStatus : post.youtubeStatus,
+  ));
+  if (pendingTargets.length === 0) {
+    return NextResponse.json({ post: toSavedPost(post) }, { headers: { "Cache-Control": "no-store" } });
+  }
 
   let settings;
   try {
@@ -126,70 +149,47 @@ export async function POST(
       },
     });
   } catch {
-    return jsonError("تعذّر تحميل بيانات ربط Meta.", 503);
+    return jsonError("تعذّر تحميل إعدادات حسابات النشر.", 503);
   }
 
-  let accessToken: string;
-  try {
-    if (!settings?.metaAccessTokenEncrypted) {
-      throw new Error("احفظي Meta Page Access Token في إعدادات المتجر قبل النشر.");
-    }
-    accessToken = decryptMetaToken(settings.metaAccessTokenEncrypted);
-  } catch (error) {
-    const message = sanitizeError(error);
-    const retryableTargets = targets.filter((platform) => {
-      const status = platform === "facebook" ? post.facebookStatus : post.instagramStatus;
-      return status === null || status === PostStatus.PENDING || status === PostStatus.FAILED;
-    });
+  let accessToken: string | undefined;
+  let metaConfigurationError: string | undefined;
+  if (pendingTargets.some((platform) => platform === "facebook" || platform === "instagram")) {
     try {
-      if (retryableTargets.length > 0) {
-        await setConfigurationFailure(post.id, retryableTargets, message);
+      if (!settings?.metaAccessTokenEncrypted) {
+        throw new Error("احفظي Meta Page Access Token في إعدادات المتجر قبل النشر.");
       }
-    } catch {
-      return jsonError("تعذّر حفظ سبب فشل النشر في قاعدة البيانات.", 503);
+      accessToken = decryptMetaToken(settings.metaAccessTokenEncrypted);
+    } catch (error) {
+      metaConfigurationError = sanitizeError(error);
     }
-    try {
-      const updated = await prisma.post.findUniqueOrThrow({ where: { id: post.id } });
-      return NextResponse.json({ error: message, post: toSavedPost(updated) }, { status: 412 });
-    } catch {
-      return jsonError("تعذّر تحميل حالة المنشور بعد فشل إعداد Meta.", 503);
-    }
-  }
-
-  if (
-    (targets.includes("facebook") && post.facebookStatus === PostStatus.PUBLISHING) ||
-    (targets.includes("instagram") && post.instagramStatus === PostStatus.PUBLISHING)
-  ) {
-    return jsonError("توجد محاولة نشر غير محسومة. تحققي من حسابات Meta قبل إعادة المحاولة.", 409);
-  }
-
-  const facebookPending = targets.includes("facebook") &&
-    (post.facebookStatus === null || post.facebookStatus === PostStatus.PENDING || post.facebookStatus === PostStatus.FAILED);
-  const instagramPending = targets.includes("instagram") &&
-    (post.instagramStatus === null || post.instagramStatus === PostStatus.PENDING || post.instagramStatus === PostStatus.FAILED);
-  if (!facebookPending && !instagramPending) {
-    return NextResponse.json({ post: toSavedPost(post) });
   }
 
   const claimWhere = {
     id: post.id,
     status: { not: PostStatus.PUBLISHING },
     OR: [
-      ...(facebookPending
+      ...(pendingTargets.includes("facebook")
         ? [{ facebookStatus: { in: [PostStatus.PENDING, PostStatus.FAILED] } }, { facebookStatus: null }]
         : []),
-      ...(instagramPending
+      ...(pendingTargets.includes("instagram")
         ? [{ instagramStatus: { in: [PostStatus.PENDING, PostStatus.FAILED] } }, { instagramStatus: null }]
+        : []),
+      ...(pendingTargets.includes("youtube")
+        ? [{ youtubeStatus: { in: [PostStatus.PENDING, PostStatus.FAILED] } }, { youtubeStatus: null }]
         : []),
     ],
   };
   const claimData = {
     status: PostStatus.PUBLISHING,
-    ...(facebookPending
+    ...(pendingTargets.includes("facebook")
       ? { facebookStatus: PostStatus.PUBLISHING, facebookError: null }
       : {}),
-    ...(instagramPending
+    ...(pendingTargets.includes("instagram")
       ? { instagramStatus: PostStatus.PUBLISHING, instagramError: null }
+      : {}),
+    ...(pendingTargets.includes("youtube")
+      ? { youtubeStatus: PostStatus.PUBLISHING, youtubeError: null }
       : {}),
   };
 
@@ -200,63 +200,76 @@ export async function POST(
     return jsonError("تعذّر بدء النشر في قاعدة البيانات.", 503);
   }
 
-  const accountSettings = {
-    accessToken,
+  const metaSettings = {
+    accessToken: accessToken ?? "",
     facebookPageId: settings?.facebookPageId ?? "",
     instagramAccountId: settings?.instagramAccountId ?? "",
   };
-  const input = {
+  const metaInput = {
     caption: post.caption,
     mediaUrl: post.mediaUrl,
     mediaType: post.mediaType === "video" ? "video" as const : "image" as const,
   };
 
-  const settledResults = await Promise.allSettled(
-    targets.map(async (platform) => {
-      const previousStatus = platform === "facebook" ? post.facebookStatus : post.instagramStatus;
-      if (previousStatus === PostStatus.PUBLISHED) {
-        return { platform, postId: platform === "facebook" ? post.facebookPostId : post.instagramPostId };
-      }
-      if (previousStatus === PostStatus.UNKNOWN) {
-        return {
-          platform,
-          error: platform === "facebook" ? post.facebookError ?? "تحققي من Facebook قبل إعادة المحاولة." : post.instagramError ?? "تحققي من Instagram قبل إعادة المحاولة.",
-        };
-      }
-
-      let publishedId: string;
-      try {
-        publishedId = platform === "facebook"
-          ? await publishFacebookPost(accountSettings, input)
-          : await publishInstagramPost(accountSettings, input);
-      } catch (error) {
-        const outcomeUnknown = error instanceof MetaGraphError && error.outcomeUnknown;
-        const message = outcomeUnknown
-          ? `نتيجة النشر غير مؤكدة. تحققي من حساب ${platform === "facebook" ? "Facebook" : "Instagram"} قبل إعادة المحاولة. ${sanitizeError(error, accessToken)}`
-          : sanitizeError(error, accessToken);
-        const platformStatus = outcomeUnknown ? PostStatus.UNKNOWN : PostStatus.FAILED;
+  const results = await Promise.allSettled(pendingTargets.map(async (platform) => {
+    let publishedId: string;
+    try {
+      if (platform === "youtube") {
+        if (post.mediaType !== "video") throw new Error("YouTube publishing requires a video.");
+        if (!post.youtubeTitle.trim()) throw new Error("YouTube video title is missing.");
+        const media = await downloadCloudinaryVideo(post.mediaUrl);
+        const uploaded = await uploadYouTubeVideo({
+          ...media,
+          title: post.youtubeTitle,
+          description: post.youtubeDescription,
+          tags: Array.isArray(post.youtubeTags)
+            ? post.youtubeTags.filter((tag): tag is string => typeof tag === "string")
+            : [],
+          privacyStatus: post.youtubePrivacyStatus === "public" ? "public" : "unlisted",
+        });
         await prisma.post.update({
           where: { id: post.id },
-          data: platform === "facebook"
-            ? { facebookStatus: platformStatus, facebookError: message }
-            : { instagramStatus: platformStatus, instagramError: message },
+          data: {
+            youtubeStatus: PostStatus.PUBLISHED,
+            youtubeVideoId: uploaded.videoId,
+            youtubeVideoUrl: uploaded.url,
+            youtubeError: null,
+          },
         });
-        return { platform, error: message };
+        return { platform, postId: uploaded.videoId, url: uploaded.url };
       }
 
+      if (metaConfigurationError) throw new Error(metaConfigurationError);
+      publishedId = platform === "facebook"
+        ? await publishFacebookPost(metaSettings, metaInput)
+        : await publishInstagramPost(metaSettings, metaInput);
+    } catch (error) {
+      const unknown = platform === "youtube"
+        ? error instanceof YouTubeUploadError && error.outcomeUnknown
+        : error instanceof MetaGraphError && error.outcomeUnknown;
+      const message = sanitizeError(error, accessToken);
       await prisma.post.update({
         where: { id: post.id },
-        data: platform === "facebook"
-          ? { facebookStatus: PostStatus.PUBLISHED, facebookPostId: publishedId, facebookError: null }
-          : { instagramStatus: PostStatus.PUBLISHED, instagramPostId: publishedId, instagramError: null },
+        data: platform === "youtube"
+          ? { youtubeStatus: unknown ? PostStatus.UNKNOWN : PostStatus.FAILED, youtubeError: message }
+          : platform === "facebook"
+            ? { facebookStatus: unknown ? PostStatus.UNKNOWN : PostStatus.FAILED, facebookError: message }
+            : { instagramStatus: unknown ? PostStatus.UNKNOWN : PostStatus.FAILED, instagramError: message },
       });
-      return { platform, postId: publishedId };
-    }),
-  );
+      return { platform, error: message };
+    }
 
-  const persistenceFailure = settledResults.some((result) => result.status === "rejected");
-  if (persistenceFailure) {
-    const message = "قد يكون Meta نشر المحتوى، لكن تعذّر حفظ النتيجة. تحققي من المنصة قبل إعادة المحاولة.";
+    await prisma.post.update({
+      where: { id: post.id },
+      data: platform === "facebook"
+        ? { facebookStatus: PostStatus.PUBLISHED, facebookPostId: publishedId, facebookError: null }
+        : { instagramStatus: PostStatus.PUBLISHED, instagramPostId: publishedId, instagramError: null },
+    });
+    return { platform, postId: publishedId };
+  }));
+
+  if (results.some((result) => result.status === "rejected")) {
+    const message = "قد يكون قد تم النشر، لكن تعذّر حفظ النتيجة. تحققي من المنصة قبل إعادة المحاولة.";
     try {
       const uncertainPost = await prisma.post.findUniqueOrThrow({ where: { id: post.id } });
       return NextResponse.json(
@@ -267,37 +280,35 @@ export async function POST(
       return jsonError(message, 503);
     }
   }
-  const results = settledResults.flatMap((result) =>
+
+  const fulfilledResults = results.flatMap((result) =>
     result.status === "fulfilled" ? [result.value] : [],
   );
-
-  let updatedPost: NonNullable<Awaited<ReturnType<typeof prisma.post.findUnique>>>;
+  const hasFailures = fulfilledResults.some((result) => "error" in result);
   try {
-    const resultPost = await prisma.post.findUniqueOrThrow({ where: { id: post.id } });
-    const publishedPlatforms = targets.every((platform) => {
-      const status = platform === "facebook" ? resultPost.facebookStatus : resultPost.instagramStatus;
-      return status === PostStatus.PUBLISHED;
-    });
-    const hasUnsupportedPlatform = Array.isArray(post.platforms) &&
-      post.platforms.some((platform) => typeof platform === "string" && platform !== "facebook" && platform !== "instagram");
-    const nextStatus = publishedPlatforms
-      ? hasUnsupportedPlatform ? PostStatus.PENDING : PostStatus.PUBLISHED
-      : PostStatus.FAILED;
-    updatedPost = await prisma.post.update({
+    const updatedPost = await prisma.post.update({
       where: { id: post.id },
-      data: { status: nextStatus },
+      data: {
+        status: currentStatus(await prisma.post.findUniqueOrThrow({
+          where: { id: post.id },
+          select: {
+            platforms: true,
+            facebookStatus: true,
+            instagramStatus: true,
+            youtubeStatus: true,
+          },
+        })),
+      },
+    });
+    return NextResponse.json({
+      post: toSavedPost(updatedPost),
+      results: fulfilledResults,
+      ...(hasFailures ? { error: "تعذّر النشر على منصة واحدة أو أكثر." } : {}),
+    }, {
+      status: hasFailures ? 502 : 200,
+      headers: { "Cache-Control": "no-store" },
     });
   } catch {
-    return jsonError("Meta respondió, pero no se pudo guardar el resultado en la base de datos.", 503);
+    return jsonError("تعذّر حفظ نتيجة النشر في قاعدة البيانات.", 503);
   }
-
-  const failedResults = results.filter((result) => "error" in result);
-  return NextResponse.json({
-    post: toSavedPost(updatedPost),
-    results,
-    ...(failedResults.length ? { error: "تعذّر النشر على منصة واحدة أو أكثر." } : {}),
-  }, {
-    status: failedResults.length ? 502 : 200,
-    headers: { "Cache-Control": "no-store" },
-  });
 }

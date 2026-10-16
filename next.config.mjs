@@ -13,7 +13,7 @@ export default withPWA({
   },
   experimental: {
     serverActions: {
-      bodySizeLimit: "10mb",
+      bodySizeLimit: "105mb",
     },
   },
 });

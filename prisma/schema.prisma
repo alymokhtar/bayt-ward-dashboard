@@ -30,6 +30,14 @@ model Post {
   instagramPostId    String?     @db.Text
   facebookError      String?     @db.Text
   instagramError     String?     @db.Text
+  youtubeStatus      PostStatus?
+  youtubeTitle       String      @default("") @db.Text
+  youtubeDescription String      @default("") @db.Text
+  youtubeTags        Json        @default("[]")
+  youtubePrivacyStatus String    @default("unlisted") @db.VarChar(10)
+  youtubeVideoId     String?     @db.Text
+  youtubeVideoUrl    String?     @db.Text
+  youtubeError       String?     @db.Text
   createdAt          DateTime    @default(now())
 }
 
@@ -41,7 +49,10 @@ model Settings {
   instagramAccountId       String   @default("") @db.Text
   tiktokAccountId          String   @default("") @db.Text
   youtubeChannelId         String   @default("") @db.Text
-  youtubeToken             String   @default("") @db.Text
+  youtubeChannelTitle      String   @default("") @db.Text
+  youtubeAccessToken       String   @default("") @db.Text
+  youtubeRefreshToken      String   @default("") @db.Text
+  youtubeTokenExpiresAt    DateTime?
   snapchatClientId         String   @default("") @db.Text
   snapchatToken            String   @default("") @db.Text
   metaAccessTokenEncrypted String   @default("") @db.Text

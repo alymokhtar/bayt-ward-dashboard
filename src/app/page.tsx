@@ -25,6 +25,14 @@ export default async function Home() {
           status: true,
           facebookStatus: true,
           instagramStatus: true,
+          youtubeStatus: true,
+          youtubeTitle: true,
+          youtubeDescription: true,
+          youtubeTags: true,
+          youtubePrivacyStatus: true,
+          youtubeVideoId: true,
+          youtubeVideoUrl: true,
+          youtubeError: true,
           facebookError: true,
           instagramError: true,
           createdAt: true,
@@ -41,6 +49,10 @@ export default async function Home() {
         ? post.platforms.filter((platform): platform is string => typeof platform === "string")
         : [],
       mediaType: post.mediaType === "video" ? "video" : "image",
+      youtubeTags: Array.isArray(post.youtubeTags)
+        ? post.youtubeTags.filter((tag): tag is string => typeof tag === "string")
+        : [],
+      youtubePrivacyStatus: post.youtubePrivacyStatus === "public" ? "public" : "unlisted",
       createdAt: post.createdAt.toISOString(),
     }));
     stats = { total, pending, published };

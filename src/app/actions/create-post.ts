@@ -11,6 +11,10 @@ export type CreatePostInput = {
   cloudinaryPublicId: string;
   mediaType: "image" | "video";
   platforms: string[];
+  youtubeTitle?: string;
+  youtubeDescription?: string;
+  youtubeTags?: string[];
+  youtubePrivacyStatus?: "public" | "unlisted";
 };
 
 export type SavedPost = {
@@ -23,6 +27,14 @@ export type SavedPost = {
   status: "PENDING" | "PUBLISHING" | "PUBLISHED" | "FAILED" | "UNKNOWN";
   facebookStatus: "PENDING" | "PUBLISHING" | "PUBLISHED" | "FAILED" | "UNKNOWN" | null;
   instagramStatus: "PENDING" | "PUBLISHING" | "PUBLISHED" | "FAILED" | "UNKNOWN" | null;
+  youtubeStatus: "PENDING" | "PUBLISHING" | "PUBLISHED" | "FAILED" | "UNKNOWN" | null;
+  youtubeTitle: string;
+  youtubeDescription: string;
+  youtubeTags: string[];
+  youtubePrivacyStatus: "public" | "unlisted";
+  youtubeVideoId: string | null;
+  youtubeVideoUrl: string | null;
+  youtubeError: string | null;
   facebookError: string | null;
   instagramError: string | null;
   createdAt: string;
@@ -42,6 +54,19 @@ export async function createPost(input: CreatePostInput): Promise<CreatePostResu
   const cloudinaryPublicId =
     typeof input?.cloudinaryPublicId === "string" ? input.cloudinaryPublicId : "";
   const mediaType = input?.mediaType === "video" ? "video" : "image";
+  const youtubeTitle = typeof input?.youtubeTitle === "string" ? input.youtubeTitle.trim() : "";
+  const youtubeDescription = typeof input?.youtubeDescription === "string" ? input.youtubeDescription.trim() : "";
+  const rawYoutubeTags: unknown = input?.youtubeTags;
+  const youtubeTagsValid = rawYoutubeTags === undefined ||
+    (Array.isArray(rawYoutubeTags) && rawYoutubeTags.every((tag) => typeof tag === "string"));
+  const youtubeTags = Array.isArray(rawYoutubeTags)
+    ? rawYoutubeTags.filter((tag): tag is string => typeof tag === "string").map((tag) => tag.trim()).filter(Boolean)
+    : [];
+  const youtubeDescriptionValid = input?.youtubeDescription === undefined ||
+    typeof input.youtubeDescription === "string";
+  const youtubePrivacyValid = input?.youtubePrivacyStatus === undefined ||
+    input.youtubePrivacyStatus === "public" || input.youtubePrivacyStatus === "unlisted";
+  const youtubePrivacyStatus = input?.youtubePrivacyStatus === "public" ? "public" : "unlisted";
   const platforms = Array.isArray(input?.platforms)
     ? [...new Set(input.platforms.filter((platform) => typeof platform === "string" && ALLOWED_PLATFORMS.has(platform)))]
     : [];
@@ -62,6 +87,14 @@ export async function createPost(input: CreatePostInput): Promise<CreatePostResu
   if (!cloudinaryPublicId || cloudinaryPublicId.length > 512 || platforms.length === 0) {
     return { success: false, error: "اختر منصة واحدة على الأقل وتأكد من الملف المرفوع." };
   }
+  if (
+    platforms.includes("youtube") &&
+    (mediaType !== "video" || !youtubeTitle || youtubeTitle.length > 100 ||
+      !youtubeDescriptionValid || youtubeDescription.length > 5000 ||
+      !youtubeTagsValid || youtubeTags.join("").length > 500 || !youtubePrivacyValid)
+  ) {
+    return { success: false, error: "تحققي من فيديو YouTube وعنوانه ووصفه ووسومه." };
+  }
 
   try {
     const post = await prisma.post.create({
@@ -73,6 +106,15 @@ export async function createPost(input: CreatePostInput): Promise<CreatePostResu
         mediaType,
         ...(platforms.includes("facebook") ? { facebookStatus: "PENDING" as const } : {}),
         ...(platforms.includes("instagram") ? { instagramStatus: "PENDING" as const } : {}),
+        ...(platforms.includes("youtube")
+          ? {
+              youtubeStatus: "PENDING" as const,
+              youtubeTitle,
+              youtubeDescription,
+              youtubeTags,
+              youtubePrivacyStatus,
+            }
+          : {}),
       },
     });
 
@@ -88,6 +130,14 @@ export async function createPost(input: CreatePostInput): Promise<CreatePostResu
         status: post.status,
         facebookStatus: post.facebookStatus,
         instagramStatus: post.instagramStatus,
+        youtubeStatus: post.youtubeStatus,
+        youtubeTitle: post.youtubeTitle,
+        youtubeDescription: post.youtubeDescription,
+        youtubeTags,
+        youtubePrivacyStatus: post.youtubePrivacyStatus === "public" ? "public" : "unlisted",
+        youtubeVideoId: post.youtubeVideoId,
+        youtubeVideoUrl: post.youtubeVideoUrl,
+        youtubeError: post.youtubeError,
         facebookError: post.facebookError,
         instagramError: post.instagramError,
         createdAt: post.createdAt.toISOString(),

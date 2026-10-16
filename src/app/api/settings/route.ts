@@ -28,7 +28,8 @@ export async function GET() {
         instagramAccountId: true,
         tiktokAccountId: true,
         youtubeChannelId: true,
-        youtubeToken: true,
+        youtubeChannelTitle: true,
+        youtubeRefreshToken: true,
         snapchatClientId: true,
         snapchatToken: true,
         metaAccessTokenEncrypted: true,
@@ -36,10 +37,10 @@ export async function GET() {
       },
     });
 
-    const { youtubeToken, snapchatToken, metaAccessTokenEncrypted, ...publicSettings } = settings;
+    const { youtubeRefreshToken, snapchatToken, metaAccessTokenEncrypted, ...publicSettings } = settings;
     return NextResponse.json({
       ...publicSettings,
-      youtubeTokenConfigured: Boolean(youtubeToken),
+      youtubeConnected: Boolean(youtubeRefreshToken),
       snapchatTokenConfigured: Boolean(snapchatToken),
       metaAccessTokenConfigured: Boolean(metaAccessTokenEncrypted),
     }, {
@@ -82,7 +83,6 @@ export async function PUT(request: Request) {
     "facebookPageId",
     "instagramAccountId",
     "tiktokAccountId",
-    "youtubeChannelId",
     "snapchatClientId",
   ] as const;
 
@@ -98,20 +98,16 @@ export async function PUT(request: Request) {
     facebookPageId: (values.facebookPageId as string).trim(),
     instagramAccountId: (values.instagramAccountId as string).trim(),
     tiktokAccountId: (values.tiktokAccountId as string).trim(),
-    youtubeChannelId: (values.youtubeChannelId as string).trim(),
     snapchatClientId: (values.snapchatClientId as string).trim(),
   };
-  const youtubeToken = values.youtubeToken;
   const snapchatToken = values.snapchatToken;
   const metaAccessToken = values.metaAccessToken;
   if (
-    (youtubeToken !== undefined && typeof youtubeToken !== "string") ||
     (snapchatToken !== undefined && typeof snapchatToken !== "string") ||
     (metaAccessToken !== undefined && typeof metaAccessToken !== "string")
   ) {
     return jsonError("رموز الوصول يجب أن تكون نصوصاً صالحة.", 400);
   }
-  const trimmedYoutubeToken = typeof youtubeToken === "string" ? youtubeToken.trim() : "";
   const trimmedSnapchatToken = typeof snapchatToken === "string" ? snapchatToken.trim() : "";
   const trimmedMetaAccessToken = typeof metaAccessToken === "string" ? metaAccessToken.trim() : "";
 
@@ -125,12 +121,11 @@ export async function PUT(request: Request) {
     data.facebookPageId.length > 255 ||
     data.instagramAccountId.length > 255 ||
     data.tiktokAccountId.length > 255 ||
-    data.youtubeChannelId.length > 255 ||
     data.snapchatClientId.length > 255
   ) {
     return jsonError("معرّف الحساب أطول من الحد المسموح.", 400);
   }
-  if (trimmedYoutubeToken.length > 10000 || trimmedSnapchatToken.length > 10000) {
+  if (trimmedSnapchatToken.length > 10000) {
     return jsonError("رمز الوصول أطول من الحد المسموح.", 400);
   }
   if (trimmedMetaAccessToken.length > 10000) {
@@ -152,13 +147,11 @@ export async function PUT(request: Request) {
       create: {
         id: SETTINGS_ID,
         ...data,
-        ...(trimmedYoutubeToken ? { youtubeToken: trimmedYoutubeToken } : {}),
         ...(trimmedSnapchatToken ? { snapchatToken: trimmedSnapchatToken } : {}),
         ...(encryptedMetaAccessToken ? { metaAccessTokenEncrypted: encryptedMetaAccessToken } : {}),
       },
       update: {
         ...data,
-        ...(trimmedYoutubeToken ? { youtubeToken: trimmedYoutubeToken } : {}),
         ...(trimmedSnapchatToken ? { snapchatToken: trimmedSnapchatToken } : {}),
         ...(encryptedMetaAccessToken ? { metaAccessTokenEncrypted: encryptedMetaAccessToken } : {}),
       },
@@ -169,7 +162,8 @@ export async function PUT(request: Request) {
         instagramAccountId: true,
         tiktokAccountId: true,
         youtubeChannelId: true,
-        youtubeToken: true,
+        youtubeChannelTitle: true,
+        youtubeRefreshToken: true,
         snapchatClientId: true,
         snapchatToken: true,
         metaAccessTokenEncrypted: true,
@@ -177,10 +171,10 @@ export async function PUT(request: Request) {
       },
     });
 
-    const { youtubeToken, snapchatToken, metaAccessTokenEncrypted, ...publicSettings } = settings;
+    const { youtubeRefreshToken, snapchatToken, metaAccessTokenEncrypted, ...publicSettings } = settings;
     return NextResponse.json({
       ...publicSettings,
-      youtubeTokenConfigured: Boolean(youtubeToken),
+      youtubeConnected: Boolean(youtubeRefreshToken),
       snapchatTokenConfigured: Boolean(snapchatToken),
       metaAccessTokenConfigured: Boolean(metaAccessTokenEncrypted),
     }, {

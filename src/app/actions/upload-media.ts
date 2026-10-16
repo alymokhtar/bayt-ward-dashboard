@@ -4,7 +4,8 @@ import type { UploadApiResponse } from "cloudinary";
 import { cloudinary } from "@/lib/cloudinary";
 import { isAdminAuthenticated } from "@/lib/admin-auth";
 
-const MAX_FILE_SIZE = 10 * 1024 * 1024;
+const MAX_IMAGE_SIZE = 10 * 1024 * 1024;
+const MAX_VIDEO_SIZE = 100 * 1024 * 1024;
 const ALLOWED_TYPES = new Set([
   "image/jpeg",
   "image/png",
@@ -30,12 +31,19 @@ export async function uploadMedia(formData: FormData): Promise<UploadMediaResult
     return { success: false, error: "يرجى اختيار ملف صالح للرفع." };
   }
 
-  if (file.size > MAX_FILE_SIZE) {
-    return { success: false, error: "الحد الأقصى لحجم الملف هو 10 ميجابايت." };
-  }
-
   if (!ALLOWED_TYPES.has(file.type)) {
     return { success: false, error: "نوع الملف غير مدعوم. ارفع صورة أو فيديو بصيغة مدعومة." };
+  }
+
+  const isYoutubeVideo = formData.getAll("platforms").includes("youtube") && file.type.startsWith("video/");
+  const maxFileSize = isYoutubeVideo ? MAX_VIDEO_SIZE : MAX_IMAGE_SIZE;
+  if (file.size > maxFileSize) {
+    return {
+      success: false,
+      error: isYoutubeVideo
+        ? "الحد الأقصى لحجم فيديو YouTube هو 100 ميجابايت."
+        : "الحد الأقصى لحجم الملف هو 10 ميجابايت.",
+    };
   }
 
   if (

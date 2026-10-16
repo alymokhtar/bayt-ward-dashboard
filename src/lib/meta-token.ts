@@ -13,7 +13,7 @@ function encryptionKey() {
   return key;
 }
 
-export function encryptMetaToken(token: string) {
+function encryptToken(token: string) {
   const iv = randomBytes(12);
   const cipher = createCipheriv("aes-256-gcm", encryptionKey(), iv);
   const encrypted = Buffer.concat([cipher.update(token, "utf8"), cipher.final()]);
@@ -21,10 +21,10 @@ export function encryptMetaToken(token: string) {
   return `v1:${iv.toString("base64url")}:${authTag.toString("base64url")}:${encrypted.toString("base64url")}`;
 }
 
-export function decryptMetaToken(value: string) {
+function decryptToken(value: string) {
   const [version, ivValue, tagValue, encryptedValue, extra] = value.split(":");
   if (version !== "v1" || !ivValue || !tagValue || encryptedValue === undefined || extra) {
-    throw new Error("The encrypted Meta access token has an unsupported format.");
+    throw new Error("The encrypted access token has an unsupported format.");
   }
 
   const decipher = createDecipheriv(
@@ -37,4 +37,20 @@ export function decryptMetaToken(value: string) {
     decipher.update(Buffer.from(encryptedValue, "base64url")),
     decipher.final(),
   ]).toString("utf8");
+}
+
+export function encryptMetaToken(token: string) {
+  return encryptToken(token);
+}
+
+export function decryptMetaToken(value: string) {
+  return decryptToken(value);
+}
+
+export function encryptYoutubeToken(token: string) {
+  return encryptToken(token);
+}
+
+export function decryptYoutubeToken(value: string) {
+  return decryptToken(value);
 }

@@ -43,7 +43,8 @@ type SavedSettings = {
 };
 
 type SettingsResponse = Partial<SavedSettings> & {
-  youtubeTokenConfigured?: boolean;
+  youtubeChannelTitle?: string;
+  youtubeConnected?: boolean;
   snapchatTokenConfigured?: boolean;
   metaAccessTokenConfigured?: boolean;
 };
@@ -73,12 +74,12 @@ export default function SettingsClient({ cloudinaryConfigured }: SettingsClientP
   const [metaAccessToken, setMetaAccessToken] = useState("");
   const [metaAccessTokenConfigured, setMetaAccessTokenConfigured] = useState(false);
   const [showAccessToken, setShowAccessToken] = useState(false);
-  const [youtubeToken, setYoutubeToken] = useState("");
   const [snapchatToken, setSnapchatToken] = useState("");
-  const [youtubeTokenConfigured, setYoutubeTokenConfigured] = useState(false);
+  const [youtubeChannelTitle, setYoutubeChannelTitle] = useState("");
+  const [youtubeConnected, setYoutubeConnected] = useState(false);
   const [snapchatTokenConfigured, setSnapchatTokenConfigured] = useState(false);
-  const [showYoutubeToken, setShowYoutubeToken] = useState(false);
   const [showSnapchatToken, setShowSnapchatToken] = useState(false);
+  const [isDisconnectingYoutube, setIsDisconnectingYoutube] = useState(false);
   const [toast, setToast] = useState("");
   const [toastIsError, setToastIsError] = useState(false);
   const toastTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
@@ -105,7 +106,8 @@ export default function SettingsClient({ cloudinaryConfigured }: SettingsClientP
           youtubeChannelId: typeof values.youtubeChannelId === "string" ? values.youtubeChannelId : "",
           snapchatClientId: typeof values.snapchatClientId === "string" ? values.snapchatClientId : "",
         });
-        setYoutubeTokenConfigured(values.youtubeTokenConfigured === true);
+        setYoutubeConnected(values.youtubeConnected === true);
+        setYoutubeChannelTitle(typeof values.youtubeChannelTitle === "string" ? values.youtubeChannelTitle : "");
         setSnapchatTokenConfigured(values.snapchatTokenConfigured === true);
         setMetaAccessTokenConfigured(values.metaAccessTokenConfigured === true);
       })
@@ -117,6 +119,24 @@ export default function SettingsClient({ cloudinaryConfigured }: SettingsClientP
       .finally(() => {
         if (!controller.signal.aborted) setSettingsLoaded(true);
       });
+
+    const youtubeResult = new URLSearchParams(window.location.search).get("youtube");
+    if (youtubeResult) {
+      const messages: Record<string, string> = {
+        connected: "تم ربط قناة YouTube بنجاح.",
+        denied: "تم إلغاء ربط قناة YouTube.",
+        "invalid-state": "تعذر التحقق من طلب ربط YouTube. حاولي مجدداً.",
+        "configuration-error": "إعدادات OAuth الخاصة بـ YouTube غير مكتملة على الخادم.",
+        "missing-token": "لم يُرجع YouTube رمز تحديث. حاولي الربط مرة أخرى.",
+        "channel-error": "لم يتم العثور على قناة YouTube لهذا الحساب.",
+        error: "تعذر ربط قناة YouTube.",
+      };
+      toastTimer.current = setTimeout(() => {
+        setToast(messages[youtubeResult] ?? messages.error);
+        setToastIsError(youtubeResult !== "connected");
+      }, 0);
+      window.history.replaceState({}, "", window.location.pathname);
+    }
 
     return () => {
       controller.abort();
@@ -138,7 +158,7 @@ export default function SettingsClient({ cloudinaryConfigured }: SettingsClientP
       const response = await fetch("/api/settings", {
         method: "PUT",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ ...settings, youtubeToken, snapchatToken, metaAccessToken }),
+        body: JSON.stringify({ ...settings, snapchatToken, metaAccessToken }),
       });
       const result: unknown = await response.json();
       if (!response.ok) {
@@ -158,10 +178,10 @@ export default function SettingsClient({ cloudinaryConfigured }: SettingsClientP
         youtubeChannelId: typeof values.youtubeChannelId === "string" ? values.youtubeChannelId : current.youtubeChannelId,
         snapchatClientId: typeof values.snapchatClientId === "string" ? values.snapchatClientId : current.snapchatClientId,
       }));
-      setYoutubeTokenConfigured(values.youtubeTokenConfigured === true);
+      setYoutubeConnected(values.youtubeConnected === true);
+      setYoutubeChannelTitle(typeof values.youtubeChannelTitle === "string" ? values.youtubeChannelTitle : "");
       setSnapchatTokenConfigured(values.snapchatTokenConfigured === true);
       setMetaAccessTokenConfigured(values.metaAccessTokenConfigured === true);
-      setYoutubeToken("");
       setSnapchatToken("");
       setMetaAccessToken("");
       setToast("تم حفظ التغييرات في قاعدة البيانات بنجاح.");
@@ -175,6 +195,32 @@ export default function SettingsClient({ cloudinaryConfigured }: SettingsClientP
       toastTimer.current = setTimeout(() => setToast(""), 4500);
     } finally {
       setIsSaving(false);
+    }
+  }
+
+  async function disconnectYoutube() {
+    if (isDisconnectingYoutube) return;
+    setIsDisconnectingYoutube(true);
+    setSettingsError("");
+    try {
+      const response = await fetch("/api/auth/youtube", { method: "DELETE" });
+      const result: unknown = await response.json();
+      if (!response.ok) {
+        const message = result && typeof result === "object" && "error" in result && typeof result.error === "string"
+          ? result.error
+          : "تعذّر فصل قناة YouTube.";
+        throw new Error(message);
+      }
+      setYoutubeConnected(false);
+      setYoutubeChannelTitle("");
+      setSettings((current) => ({ ...current, youtubeChannelId: "" }));
+      setToast("تم فصل قناة YouTube.");
+      setToastIsError(false);
+    } catch (error) {
+      setToast(error instanceof Error ? error.message : "تعذّر فصل قناة YouTube.");
+      setToastIsError(true);
+    } finally {
+      setIsDisconnectingYoutube(false);
     }
   }
 
@@ -290,14 +336,6 @@ export default function SettingsClient({ cloudinaryConfigured }: SettingsClientP
                         <input id="tiktok-account-id" value={settings.tiktokAccountId} onChange={(event) => updateSetting("tiktokAccountId", event.target.value)} className={`${inputClass} pr-10`} placeholder="معرّف الحساب" autoComplete="off" />
                       </div>
                     </Field>
-                    <Field label="YouTube Channel ID" htmlFor="youtube-channel-id" hint="معرّف قناة YouTube">
-                      <div className="relative">
-                        <span className="pointer-events-none absolute right-3.5 top-1/2 grid size-6 -translate-y-1/2 place-items-center rounded-md bg-[#fff0f0] text-[#ff0033]">
-                          <SocialPlatformIcon platform="youtube" size={17} />
-                        </span>
-                        <input id="youtube-channel-id" value={settings.youtubeChannelId} onChange={(event) => updateSetting("youtubeChannelId", event.target.value)} className={`${inputClass} pr-12`} placeholder="معرّف القناة" autoComplete="off" />
-                      </div>
-                    </Field>
                     <Field label="Snapchat Client ID" htmlFor="snapchat-client-id" hint="معرّف تطبيق Snapchat">
                       <div className="relative">
                         <span className="pointer-events-none absolute right-3.5 top-1/2 grid size-6 -translate-y-1/2 place-items-center rounded-md bg-[#fffc00] text-[#111]">
@@ -308,14 +346,37 @@ export default function SettingsClient({ cloudinaryConfigured }: SettingsClientP
                     </Field>
                   </div>
 
-                  <div className="grid gap-5 sm:grid-cols-2">
-                    <Field label="YouTube Access Token" htmlFor="youtube-access-token" hint={youtubeTokenConfigured ? "رمز محفوظ — اتركيه فارغاً للاحتفاظ به" : "لم يُحفظ رمز بعد"}>
-                      <div className="relative">
-                        <LockKeyhole size={16} className="pointer-events-none absolute right-3.5 top-1/2 -translate-y-1/2 text-[#92978e]" />
-                        <input id="youtube-access-token" type={showYoutubeToken ? "text" : "password"} value={youtubeToken} onChange={(event) => setYoutubeToken(event.target.value)} className={`${inputClass} px-11`} placeholder={youtubeTokenConfigured ? "أدخلي رمزاً جديداً للاستبدال" : "أدخلي رمز الوصول"} autoComplete="new-password" />
-                        <button type="button" onClick={() => setShowYoutubeToken((visible) => !visible)} className="absolute left-3 top-1/2 -translate-y-1/2 rounded-md p-1 text-[#8f948c] hover:bg-[#f4f3ef]" aria-label={showYoutubeToken ? "إخفاء رمز YouTube" : "إظهار رمز YouTube"}>{showYoutubeToken ? <EyeOff size={16} /> : <Eye size={16} />}</button>
+                  <div className="rounded-2xl border border-[#ece9e2] bg-[#fbfbf8] p-4 sm:p-5">
+                    <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
+                      <div className="flex items-center gap-3">
+                        <span className="grid size-11 place-items-center rounded-xl bg-[#fff0f0] text-[#ff0033]">
+                          <SocialPlatformIcon platform="youtube" size={21} />
+                        </span>
+                        <div>
+                          <p className="text-sm font-bold text-[#3b463f]">قناة YouTube</p>
+                          <p className="mt-1 text-xs text-[#858a82]">
+                            {youtubeConnected
+                              ? `متصلة: ${youtubeChannelTitle || settings.youtubeChannelId}`
+                              : "اربطِي قناتك للنشر المباشر"}
+                          </p>
+                        </div>
                       </div>
-                    </Field>
+                      <div className="flex gap-2">
+                        <a href="/api/auth/youtube" aria-disabled={!settingsLoaded}
+                          className={`inline-flex min-h-10 items-center justify-center rounded-xl px-4 text-xs font-bold text-white ${settingsLoaded ? "bg-[#205c4e] hover:bg-[#184d41]" : "pointer-events-none bg-[#aabbb1]"}`}>
+                          {youtubeConnected ? "إعادة ربط القناة" : "ربط قناة YouTube"}
+                        </a>
+                        {youtubeConnected ? (
+                          <button type="button" onClick={disconnectYoutube} disabled={isDisconnectingYoutube}
+                            className="min-h-10 rounded-xl border border-[#e5c9c4] px-4 text-xs font-bold text-[#a44f46] hover:bg-[#fff5f2] disabled:opacity-50">
+                            {isDisconnectingYoutube ? "جارٍ الفصل..." : "فصل"}
+                          </button>
+                        ) : null}
+                      </div>
+                    </div>
+                  </div>
+
+                  <div className="grid gap-5 sm:grid-cols-2">
                     <Field label="Snapchat Access Token" htmlFor="snapchat-access-token" hint={snapchatTokenConfigured ? "رمز محفوظ — اتركيه فارغاً للاحتفاظ به" : "لم يُحفظ رمز بعد"}>
                       <div className="relative">
                         <LockKeyhole size={16} className="pointer-events-none absolute right-3.5 top-1/2 -translate-y-1/2 text-[#92978e]" />
