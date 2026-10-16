@@ -62,6 +62,25 @@ const PLATFORMS = [
   { id: "snapchat", name: "Snapchat", subtitle: "قصة أو Spotlight", icon: null, style: "snapchat" },
 ] as const;
 
+const DEFAULT_YOUTUBE_DESCRIPTION = `🌸 بيت ورد | Bayt Ward - عالم أنيق لطرح ومكملات الحجاب 🌸
+
+أهلاً بكم في بيت ورد! نقدم لكم أحدث وأرقى تشكيلات الطرح، مكملات الحجاب، الإسدالات، وملابس المحجبات المصممة بعناية لتناسب كل أوقاتك ومناسباتك.
+
+✨ منتجاتنا تشمل:
+- تشكيلات متنوعة من الطرح بجميع الخامات واللفات العصريّة.
+- مكملات ولوازم الحجاب الأساسية (بندانات، معاصم، تثبيت).
+- إسدالات صلاة أنيقة ومريحة وملابس محجبات مميزة.
+- إكسسوارات راقية لإكمال إطلالتك.
+
+📲 للطلب والاستفسار التواصل عبر الواتساب أو الاتصال:
+01099000026
+💬 رابط المحادثة المباشرة: https://wa.me/201099000026
+
+📍 لا تنسوا الاشتراك في القناة وتفعيل الجرس لمتابعة أحدث التنسيقات والعروض!
+#بيت_ورد #طرح #حجاب #ملابس_محجبات #إسدالات #لفات_طرح #مكملات_حجاب #تنسيقات_حجاب`;
+
+const DEFAULT_YOUTUBE_TAGS = "بيت ورد, بيت ورد طرح, طرح, حجاب, مكملات حجاب, لوازم حجاب, إسدالات, ملابس محجبات, إكسسوارات, لفات طرح, عبايات, تنسيقات محجبات, طرح كويتي, بندانات, موضة المحجبات, ازياء محجبات";
+
 const STATUS_LABELS: Record<SavedPost["status"], string> = {
   PENDING: "قيد الانتظار",
   PUBLISHING: "جارٍ النشر",
@@ -321,8 +340,8 @@ export default function DashboardClient({ initialPosts, initialStats, databaseAv
   const [selectedFile, setSelectedFile] = useState<File | null>(null);
   const [caption, setCaption] = useState("");
   const [youtubeTitle, setYoutubeTitle] = useState("");
-  const [youtubeDescription, setYoutubeDescription] = useState("");
-  const [youtubeTags, setYoutubeTags] = useState("");
+  const [youtubeDescription, setYoutubeDescription] = useState(DEFAULT_YOUTUBE_DESCRIPTION);
+  const [youtubeTags, setYoutubeTags] = useState(DEFAULT_YOUTUBE_TAGS);
   const [youtubePrivacyStatus, setYoutubePrivacyStatus] = useState<"public" | "unlisted">("unlisted");
   const [selectedPlatforms, setSelectedPlatforms] = useState<string[]>(["instagram"]);
   const [isDragging, setIsDragging] = useState(false);
@@ -642,8 +661,8 @@ export default function DashboardClient({ initialPosts, initialStats, databaseAv
       clearSelectedFile();
       setCaption("");
       setYoutubeTitle("");
-      setYoutubeDescription("");
-      setYoutubeTags("");
+      setYoutubeDescription(DEFAULT_YOUTUBE_DESCRIPTION);
+      setYoutubeTags(DEFAULT_YOUTUBE_TAGS);
     } catch {
       setError("حدث خطأ غير متوقع. يرجى المحاولة مرة أخرى.");
     } finally {
