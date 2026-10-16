@@ -20,6 +20,12 @@ You can start editing the page by modifying `app/page.tsx`. The page auto-update
 
 This project uses [`next/font`](https://nextjs.org/docs/app/building-your-application/optimizing/fonts) to automatically optimize and load [Geist](https://vercel.com/font), a new font family for Vercel.
 
+## YouTube video uploads
+
+Configure `YOUTUBE_CLIENT_ID`, `YOUTUBE_CLIENT_SECRET`, and `YOUTUBE_REDIRECT_URI` on the server. The authenticated admin can upload a video with a `multipart/form-data` POST to `/api/youtube/upload`. Include `file`, `title`, `description`, `accessToken`, and `refreshToken`; `tags` is optional (comma-separated, repeated, or a JSON array), and `privacyStatus` may be `public` or `unlisted` (default: `public`). The route refreshes the access token with the supplied refresh token before uploading.
+
+The response contains `videoId` and the YouTube watch `url`. Keep OAuth tokens secret and send the request only over HTTPS outside local development.
+
 ## Learn More
 
 To learn more about Next.js, take a look at the following resources:
