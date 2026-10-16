@@ -1,24 +1,16 @@
 import { decryptTikTokToken, encryptTikTokToken } from "@/lib/meta-token";
 import { prisma } from "@/lib/prisma";
+import {
+  createTikTokDirectPostPayload,
+  isTikTokPrivacyLevel,
+  toTikTokPrivacyLevel,
+  type TikTokPrivacyLevel,
+} from "@/lib/tiktok-privacy";
 
 const TIKTOK_API = "https://open.tiktokapis.com";
 const CHUNK_SIZE = 10 * 1024 * 1024;
 const SINGLE_CHUNK_MAX_SIZE = 64 * 1024 * 1024;
 const MAX_VIDEO_SIZE = 100 * 1024 * 1024;
-const PRIVACY_LEVELS = [
-  "PUBLIC_TO_EVERYONE",
-  "MUTUAL_FOLLOW_FRIENDS",
-  "FOLLOWER_OF_CREATOR",
-  "SELF_ONLY",
-] as const;
-const PRIVACY_LEVEL_SET: ReadonlySet<string> = new Set(PRIVACY_LEVELS);
-
-export type TikTokPrivacyLevel = (typeof PRIVACY_LEVELS)[number];
-
-export function isTikTokPrivacyLevel(value: string): value is TikTokPrivacyLevel {
-  return PRIVACY_LEVEL_SET.has(value);
-}
-
 type TikTokError = {
   code?: string;
   message?: string;
@@ -47,6 +39,11 @@ function isRecord(value: unknown): value is Record<string, unknown> {
 
 function apiError<T>(body: TikTokEnvelope<T>, status: number) {
   if (status < 400 && (!body.error?.code || body.error.code === "ok")) return;
+  if (body.error?.code === "unaudited_client_can_only_post_to_private_accounts") {
+    throw new Error(
+      "TikTok Sandbox only allows Direct Posts to private TikTok accounts. Set the connected TikTok account itself to Private in TikTok, then try again. Selecting “أنا فقط” only changes this video's privacy.",
+    );
+  }
   throw new Error(
     body.error?.message
       ? `TikTok API error (${body.error.code ?? status}): ${body.error.message}`
@@ -176,15 +173,13 @@ export async function uploadTikTokVideo(input: {
   if (input.caption.length > 2200) {
     throw new Error("TikTok captions cannot exceed 2,200 UTF-16 code units.");
   }
-  if (!isTikTokPrivacyLevel(input.privacyLevel)) {
-    throw new Error("Select a valid TikTok privacy option.");
-  }
+  const privacyLevel = toTikTokPrivacyLevel(input.privacyLevel);
   const accessToken = await getAccessToken();
   const creator = await queryCreatorInfo(accessToken);
   if (!creator.canPost) {
     throw new Error("TikTok currently does not allow this account to publish. Try again later.");
   }
-  if (!creator.privacyLevelOptions.includes(input.privacyLevel)) {
+  if (!creator.privacyLevelOptions.includes(privacyLevel)) {
     throw new Error("The selected TikTok privacy option is no longer available. Reopen the editor and try again.");
   }
 
@@ -212,23 +207,18 @@ export async function uploadTikTokVideo(input: {
   const chunkSize = video.byteLength <= SINGLE_CHUNK_MAX_SIZE
     ? video.byteLength
     : CHUNK_SIZE;
-  const totalChunkCount = Math.floor(video.byteLength / chunkSize);
+  const totalChunkCount = Math.ceil(video.byteLength / chunkSize);
+  const payload = createTikTokDirectPostPayload({
+    title: input.caption,
+    privacyLevel,
+    videoSize: video.byteLength,
+    chunkSize,
+    totalChunkCount,
+  });
   const initialized = await tiktokRequest<{ publish_id?: string; upload_url?: string }>(
     accessToken,
     "/v2/post/publish/video/init/",
-    {
-      post_info: {
-        title: input.caption,
-        privacy_level: input.privacyLevel,
-        brand_organic_toggle: true,
-      },
-      source_info: {
-        source: "FILE_UPLOAD",
-        video_size: video.byteLength,
-        chunk_size: chunkSize,
-        total_chunk_count: totalChunkCount,
-      },
-    },
+    payload,
   );
   if (!initialized.publish_id || !initialized.upload_url) {
     throw new Error("TikTok did not return the upload session details.");
@@ -283,7 +273,7 @@ async function queryCreatorInfo(accessToken: string) {
     canPost: result.creator_can_post !== false,
     nickname: result.creator_nickname ?? "",
     privacyLevelOptions: (result.privacy_level_options ?? []).filter(
-      (value): value is TikTokPrivacyLevel => PRIVACY_LEVEL_SET.has(value),
+      (value): value is TikTokPrivacyLevel => isTikTokPrivacyLevel(value),
     ),
     maxVideoPostDurationSeconds: result.max_video_post_duration_sec ?? null,
   };

@@ -2,7 +2,7 @@ import { PostStatus } from "@prisma/client";
 import DashboardClient from "./dashboard-client";
 import type { SavedPost } from "@/app/actions/create-post";
 import { prisma } from "@/lib/prisma";
-import { isTikTokPrivacyLevel } from "@/lib/tiktok";
+import { isTikTokPrivacyLevel } from "@/lib/tiktok-privacy";
 
 export const dynamic = "force-dynamic";
 

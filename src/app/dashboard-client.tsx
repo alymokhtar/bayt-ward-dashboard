@@ -38,6 +38,11 @@ import { createPost, type SavedPost } from "@/app/actions/create-post";
 import { cleanupFailedUpload } from "@/app/actions/cleanup-upload";
 import { deletePost } from "@/app/actions/delete-post";
 import { uploadMedia } from "@/app/actions/upload-media";
+import {
+  isTikTokPrivacyLevel,
+  TIKTOK_PRIVACY_LABELS,
+  type TikTokPrivacyLevel,
+} from "@/lib/tiktok-privacy";
 import BrandMark from "@/components/brand-mark";
 import SocialLinks from "@/components/social-links";
 import SocialPlatformIcon from "@/components/social-platform-icon";
@@ -80,25 +85,6 @@ const DEFAULT_YOUTUBE_DESCRIPTION = `🌸 بيت ورد | Bayt Ward - عالم �
 #بيت_ورد #طرح #حجاب #ملابس_محجبات #إسدالات #لفات_طرح #مكملات_حجاب #تنسيقات_حجاب`;
 
 const DEFAULT_YOUTUBE_TAGS = "بيت ورد, بيت ورد طرح, طرح, حجاب, مكملات حجاب, لوازم حجاب, إسدالات, ملابس محجبات, إكسسوارات, لفات طرح, عبايات, تنسيقات محجبات, طرح كويتي, بندانات, موضة المحجبات, ازياء محجبات";
-const TIKTOK_PRIVACY_LEVELS = [
-  "PUBLIC_TO_EVERYONE",
-  "MUTUAL_FOLLOW_FRIENDS",
-  "FOLLOWER_OF_CREATOR",
-  "SELF_ONLY",
-] as const;
-type TikTokPrivacyLevel = (typeof TIKTOK_PRIVACY_LEVELS)[number];
-const TIKTOK_PRIVACY_LABELS: Record<TikTokPrivacyLevel, string> = {
-  PUBLIC_TO_EVERYONE: "عام",
-  MUTUAL_FOLLOW_FRIENDS: "الأصدقاء المتبادلون",
-  FOLLOWER_OF_CREATOR: "المتابعون",
-  SELF_ONLY: "أنا فقط",
-};
-const TIKTOK_PRIVACY_LEVEL_SET: ReadonlySet<string> = new Set(TIKTOK_PRIVACY_LEVELS);
-
-function isTikTokPrivacyLevel(value: string): value is TikTokPrivacyLevel {
-  return TIKTOK_PRIVACY_LEVEL_SET.has(value);
-}
-
 const STATUS_LABELS: Record<SavedPost["status"], string> = {
   PENDING: "قيد الانتظار",
   PUBLISHING: "جارٍ النشر",

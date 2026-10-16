@@ -2,7 +2,7 @@
 
 import { prisma } from "@/lib/prisma";
 import { isAdminAuthenticated } from "@/lib/admin-auth";
-import { isTikTokPrivacyLevel } from "@/lib/tiktok";
+import { isTikTokPrivacyLevel } from "@/lib/tiktok-privacy";
 
 const ALLOWED_PLATFORMS = new Set(["facebook", "instagram", "tiktok", "youtube", "snapchat"]);
 

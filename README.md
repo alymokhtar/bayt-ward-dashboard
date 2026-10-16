@@ -34,6 +34,8 @@ Configure `TIKTOK_CLIENT_KEY`, `TIKTOK_CLIENT_SECRET`, and `TIKTOK_REDIRECT_URI`
 
 Apply the TikTok database migration with `npx prisma migrate deploy`. In the dashboard, connect the account from Settings, select TikTok when creating a video post, choose one of the creator's currently available privacy settings, and confirm the publish action. The app uploads the video in sequential chunks and checks TikTok's asynchronous publish status. Videos sent via an unaudited Content Posting API client may be restricted to private viewing by TikTok; complete TikTok's app audit before expecting public distribution.
 
+In TikTok Sandbox, `unaudited_client_can_only_post_to_private_accounts` refers to the connected TikTok account's account-level privacy setting, not only the post's `privacy_level`. Set the TikTok account itself to Private for sandbox tests; choosing `SELF_ONLY` (`أنا فقط`) sets the video's audience but does not change the account's privacy setting.
+
 ## Learn More
 
 To learn more about Next.js, take a look at the following resources:
