@@ -26,7 +26,8 @@ export async function GET() {
         defaultHashtags: true,
         facebookPageId: true,
         instagramAccountId: true,
-        tiktokAccountId: true,
+        tiktokDisplayName: true,
+        tiktokRefreshToken: true,
         youtubeChannelId: true,
         youtubeChannelTitle: true,
         youtubeRefreshToken: true,
@@ -37,10 +38,17 @@ export async function GET() {
       },
     });
 
-    const { youtubeRefreshToken, snapchatToken, metaAccessTokenEncrypted, ...publicSettings } = settings;
+    const {
+      youtubeRefreshToken,
+      tiktokRefreshToken,
+      snapchatToken,
+      metaAccessTokenEncrypted,
+      ...publicSettings
+    } = settings;
     return NextResponse.json({
       ...publicSettings,
       youtubeConnected: Boolean(youtubeRefreshToken),
+      tiktokConnected: Boolean(tiktokRefreshToken),
       snapchatTokenConfigured: Boolean(snapchatToken),
       metaAccessTokenConfigured: Boolean(metaAccessTokenEncrypted),
     }, {
@@ -82,7 +90,6 @@ export async function PUT(request: Request) {
     "defaultHashtags",
     "facebookPageId",
     "instagramAccountId",
-    "tiktokAccountId",
     "snapchatClientId",
   ] as const;
 
@@ -97,7 +104,6 @@ export async function PUT(request: Request) {
     defaultHashtags: (values.defaultHashtags as string).trim(),
     facebookPageId: (values.facebookPageId as string).trim(),
     instagramAccountId: (values.instagramAccountId as string).trim(),
-    tiktokAccountId: (values.tiktokAccountId as string).trim(),
     snapchatClientId: (values.snapchatClientId as string).trim(),
   };
   const snapchatToken = values.snapchatToken;
@@ -120,7 +126,6 @@ export async function PUT(request: Request) {
   if (
     data.facebookPageId.length > 255 ||
     data.instagramAccountId.length > 255 ||
-    data.tiktokAccountId.length > 255 ||
     data.snapchatClientId.length > 255
   ) {
     return jsonError("معرّف الحساب أطول من الحد المسموح.", 400);
@@ -160,10 +165,11 @@ export async function PUT(request: Request) {
         defaultHashtags: true,
         facebookPageId: true,
         instagramAccountId: true,
-        tiktokAccountId: true,
         youtubeChannelId: true,
         youtubeChannelTitle: true,
         youtubeRefreshToken: true,
+        tiktokDisplayName: true,
+        tiktokRefreshToken: true,
         snapchatClientId: true,
         snapchatToken: true,
         metaAccessTokenEncrypted: true,
@@ -171,10 +177,17 @@ export async function PUT(request: Request) {
       },
     });
 
-    const { youtubeRefreshToken, snapchatToken, metaAccessTokenEncrypted, ...publicSettings } = settings;
+    const {
+      youtubeRefreshToken,
+      tiktokRefreshToken,
+      snapchatToken,
+      metaAccessTokenEncrypted,
+      ...publicSettings
+    } = settings;
     return NextResponse.json({
       ...publicSettings,
       youtubeConnected: Boolean(youtubeRefreshToken),
+      tiktokConnected: Boolean(tiktokRefreshToken),
       snapchatTokenConfigured: Boolean(snapchatToken),
       metaAccessTokenConfigured: Boolean(metaAccessTokenEncrypted),
     }, {

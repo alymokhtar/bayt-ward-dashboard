@@ -80,6 +80,24 @@ const DEFAULT_YOUTUBE_DESCRIPTION = `🌸 بيت ورد | Bayt Ward - عالم �
 #بيت_ورد #طرح #حجاب #ملابس_محجبات #إسدالات #لفات_طرح #مكملات_حجاب #تنسيقات_حجاب`;
 
 const DEFAULT_YOUTUBE_TAGS = "بيت ورد, بيت ورد طرح, طرح, حجاب, مكملات حجاب, لوازم حجاب, إسدالات, ملابس محجبات, إكسسوارات, لفات طرح, عبايات, تنسيقات محجبات, طرح كويتي, بندانات, موضة المحجبات, ازياء محجبات";
+const TIKTOK_PRIVACY_LEVELS = [
+  "PUBLIC_TO_EVERYONE",
+  "MUTUAL_FOLLOW_FRIENDS",
+  "FOLLOWER_OF_CREATOR",
+  "SELF_ONLY",
+] as const;
+type TikTokPrivacyLevel = (typeof TIKTOK_PRIVACY_LEVELS)[number];
+const TIKTOK_PRIVACY_LABELS: Record<TikTokPrivacyLevel, string> = {
+  PUBLIC_TO_EVERYONE: "عام",
+  MUTUAL_FOLLOW_FRIENDS: "الأصدقاء المتبادلون",
+  FOLLOWER_OF_CREATOR: "المتابعون",
+  SELF_ONLY: "أنا فقط",
+};
+const TIKTOK_PRIVACY_LEVEL_SET: ReadonlySet<string> = new Set(TIKTOK_PRIVACY_LEVELS);
+
+function isTikTokPrivacyLevel(value: string): value is TikTokPrivacyLevel {
+  return TIKTOK_PRIVACY_LEVEL_SET.has(value);
+}
 
 const STATUS_LABELS: Record<SavedPost["status"], string> = {
   PENDING: "قيد الانتظار",
@@ -274,28 +292,33 @@ function HistorySection({ posts, databaseAvailable, searchTerm, onDelete, onRetr
                     <span>{date}</span><span aria-hidden="true">·</span>
                     {post.platforms.map((platform) => <span key={platform} className="capitalize">{platform}</span>)}
                   </div>
-                  {post.platforms.some((platform) => platform === "facebook" || platform === "instagram" || platform === "youtube") ? (
+                  {post.platforms.some((platform) => platform === "facebook" || platform === "instagram" || platform === "tiktok" || platform === "youtube") ? (
                     <div className="mt-2 space-y-1.5">
-                      {(["facebook", "instagram", "youtube"] as const).map((platform) => {
+                      {(["facebook", "instagram", "tiktok", "youtube"] as const).map((platform) => {
                         if (!post.platforms.includes(platform)) return null;
                         const status = platform === "facebook"
                           ? post.facebookStatus
-                          : platform === "instagram" ? post.instagramStatus : post.youtubeStatus;
+                          : platform === "instagram" ? post.instagramStatus
+                          : platform === "tiktok" ? post.tiktokStatus : post.youtubeStatus;
                         const error = platform === "facebook"
                           ? post.facebookError
-                          : platform === "instagram" ? post.instagramError : post.youtubeError;
+                          : platform === "instagram" ? post.instagramError
+                          : platform === "tiktok" ? post.tiktokError : post.youtubeError;
                         return (
                           <p key={platform} className="text-[10px] leading-5 text-[#777f77]">
-                            <span className="font-semibold">{platform === "facebook" ? "Facebook" : platform === "instagram" ? "Instagram" : "YouTube"}:</span>{" "}
+                            <span className="font-semibold">{platform === "facebook" ? "Facebook" : platform === "instagram" ? "Instagram" : platform === "tiktok" ? "TikTok" : "YouTube"}:</span>{" "}
                             {status ? status === "UNKNOWN" ? "تحققي من الحساب قبل إعادة المحاولة" : STATUS_LABELS[status] : "لم يبدأ النشر"}
                             {platform === "youtube" && post.youtubeVideoUrl ? (
                               <> · <a href={post.youtubeVideoUrl} target="_blank" rel="noreferrer" className="font-semibold text-[#286355] underline">مشاهدة الفيديو</a></>
+                            ) : null}
+                            {platform === "tiktok" && post.tiktokVideoUrl ? (
+                              <> · <a href={post.tiktokVideoUrl} target="_blank" rel="noreferrer" className="font-semibold text-[#286355] underline">مشاهدة الفيديو</a></>
                             ) : null}
                             {error ? <span className="block text-[#a44f46]">{error}</span> : null}
                           </p>
                         );
                       })}
-                      {post.platforms.some((platform) => platform !== "facebook" && platform !== "instagram" && platform !== "youtube") ? (
+                      {post.platforms.some((platform) => platform !== "facebook" && platform !== "instagram" && platform !== "tiktok" && platform !== "youtube") ? (
                         <p className="text-[10px] text-[#a07035]">بقية المنصات غير مفعّلة للنشر التلقائي بعد.</p>
                       ) : null}
                     </div>
@@ -303,7 +326,7 @@ function HistorySection({ posts, databaseAvailable, searchTerm, onDelete, onRetr
                 </div>
                 <div className="col-span-2 flex items-center justify-between gap-3 pr-[68px] sm:col-span-1 sm:justify-end sm:pr-0">
                   <StatusPill status={post.status} />
-                  {post.platforms.some((platform) => (platform === "facebook" && (post.facebookStatus === "FAILED" || post.facebookStatus === "PENDING")) || (platform === "instagram" && (post.instagramStatus === "FAILED" || post.instagramStatus === "PENDING")) || (platform === "youtube" && (post.youtubeStatus === "FAILED" || post.youtubeStatus === "PENDING"))) ? (
+                  {post.platforms.some((platform) => (platform === "facebook" && (post.facebookStatus === "FAILED" || post.facebookStatus === "PENDING")) || (platform === "instagram" && (post.instagramStatus === "FAILED" || post.instagramStatus === "PENDING")) || (platform === "tiktok" && (post.tiktokStatus === "FAILED" || post.tiktokStatus === "PENDING")) || (platform === "youtube" && (post.youtubeStatus === "FAILED" || post.youtubeStatus === "PENDING"))) ? (
                     <button
                       type="button"
                       onClick={() => onRetryPublish(post)}
@@ -343,6 +366,15 @@ export default function DashboardClient({ initialPosts, initialStats, databaseAv
   const [youtubeDescription, setYoutubeDescription] = useState(DEFAULT_YOUTUBE_DESCRIPTION);
   const [youtubeTags, setYoutubeTags] = useState(DEFAULT_YOUTUBE_TAGS);
   const [youtubePrivacyStatus, setYoutubePrivacyStatus] = useState<"public" | "unlisted">("unlisted");
+  const [tiktokConnected, setTiktokConnected] = useState(false);
+  const [tiktokPrivacyOptions, setTiktokPrivacyOptions] = useState<TikTokPrivacyLevel[]>([]);
+  const [tiktokPrivacyLevel, setTiktokPrivacyLevel] = useState<TikTokPrivacyLevel>("PUBLIC_TO_EVERYONE");
+  const [tiktokCanPost, setTiktokCanPost] = useState(false);
+  const [tiktokCreatorNickname, setTiktokCreatorNickname] = useState("");
+  const [tiktokMaxDuration, setTiktokMaxDuration] = useState<number | null>(null);
+  const [tiktokInfoError, setTiktokInfoError] = useState("");
+  const [tiktokConsent, setTiktokConsent] = useState(false);
+  const [videoDuration, setVideoDuration] = useState<number | null>(null);
   const [selectedPlatforms, setSelectedPlatforms] = useState<string[]>(["instagram"]);
   const [isDragging, setIsDragging] = useState(false);
   const [isSaving, setIsSaving] = useState(false);
@@ -357,6 +389,7 @@ export default function DashboardClient({ initialPosts, initialStats, databaseAv
   const [retryingPostId, setRetryingPostId] = useState<string | null>(null);
   const [historyError, setHistoryError] = useState("");
   const [historyNotice, setHistoryNotice] = useState("");
+  const tiktokPollInProgress = useRef(false);
   const isDarkMode = useSyncExternalStore(subscribeToTheme, getThemeSnapshot, getServerThemeSnapshot);
   const inputRef = useRef<HTMLInputElement>(null);
   const searchInputRef = useRef<HTMLInputElement>(null);
@@ -366,9 +399,113 @@ export default function DashboardClient({ initialPosts, initialStats, databaseAv
     `${post.caption} ${post.platforms.join(" ")}`.toLocaleLowerCase("ar").includes(searchTerm.trim().toLocaleLowerCase("ar")),
   );
 
+  const tiktokSelected = selectedPlatforms.includes("tiktok");
+  useEffect(() => {
+    if (!tiktokSelected || !tiktokConnected) return;
+    const controller = new AbortController();
+    void fetch("/api/tiktok/creator-info", { cache: "no-store", signal: controller.signal })
+      .then(async (response) => {
+        const result: unknown = await response.json();
+        if (!response.ok) {
+          const message = result && typeof result === "object" && "error" in result &&
+            typeof result.error === "string"
+            ? result.error
+            : "تعذر تحميل خيارات حساب TikTok.";
+          throw new Error(message);
+        }
+        if (!result || typeof result !== "object") {
+          throw new Error("تعذر تحميل خيارات حساب TikTok.");
+        }
+        const values = result as {
+          privacyLevelOptions?: unknown;
+          canPost?: unknown;
+          maxVideoPostDurationSeconds?: unknown;
+          nickname?: unknown;
+        };
+        const options = Array.isArray(values.privacyLevelOptions)
+          ? values.privacyLevelOptions.filter(
+              (value): value is TikTokPrivacyLevel =>
+                typeof value === "string" && isTikTokPrivacyLevel(value),
+            )
+          : [];
+        setTiktokInfoError("");
+        setTiktokPrivacyOptions(options);
+        setTiktokCanPost(values.canPost === true);
+        setTiktokCreatorNickname(typeof values.nickname === "string" ? values.nickname : "");
+        setTiktokMaxDuration(typeof values.maxVideoPostDurationSeconds === "number"
+          ? values.maxVideoPostDurationSeconds
+          : null);
+        setTiktokPrivacyLevel((current) => options.includes(current) ? current : options[0] ?? "PUBLIC_TO_EVERYONE");
+      })
+      .catch((requestError: unknown) => {
+        if (!controller.signal.aborted) {
+          setTiktokInfoError(requestError instanceof Error
+            ? requestError.message
+            : "تعذر تحميل خيارات حساب TikTok.");
+        }
+      });
+    return () => controller.abort();
+  }, [tiktokConnected, tiktokSelected]);
+
   useEffect(() => () => {
     if (objectUrlRef.current) URL.revokeObjectURL(objectUrlRef.current);
   }, []);
+
+  useEffect(() => {
+    const pending = posts.filter(
+      (post) => (post.tiktokStatus === "PUBLISHING" || post.tiktokStatus === "UNKNOWN") &&
+        post.tiktokPublishId,
+    );
+    if (pending.length === 0) return;
+
+    let cancelled = false;
+    const pollStatuses = async () => {
+      if (tiktokPollInProgress.current) return;
+      tiktokPollInProgress.current = true;
+      try {
+        const responses = await Promise.all(pending.map(async (post) => {
+          const response = await fetch(`/api/posts/${encodeURIComponent(post.id)}/tiktok-status`, {
+            method: "POST",
+          });
+          if (!response.ok) return null;
+          const result: unknown = await response.json();
+          if (!result || typeof result !== "object" || !("post" in result) ||
+            !result.post || typeof result.post !== "object" || !("id" in result.post) ||
+            result.post.id !== post.id) return null;
+          return result.post as SavedPost;
+        }));
+        if (cancelled) return;
+        const updatedPosts = responses.filter((post): post is SavedPost => post !== null);
+        if (updatedPosts.length === 0) return;
+        setPosts((current) => {
+          const byId = new Map(updatedPosts.map((post) => [post.id, post]));
+          return current.map((post) => byId.get(post.id) ?? post);
+        });
+        setStats((current) => updatedPosts.reduce((stats, updated) => {
+          const previous = pending.find((post) => post.id === updated.id);
+          if (!previous) return stats;
+          const wasPending = previous.status === "PENDING" || previous.status === "PUBLISHING";
+          const isPending = updated.status === "PENDING" || updated.status === "PUBLISHING";
+          return {
+            ...stats,
+            pending: Math.max(0, stats.pending + Number(isPending) - Number(wasPending)),
+            published: Math.max(0, stats.published + Number(updated.status === "PUBLISHED") - Number(previous.status === "PUBLISHED")),
+          };
+        }, current));
+      } catch {
+        // The next scheduled status check retries transient network failures.
+      } finally {
+        tiktokPollInProgress.current = false;
+      }
+    };
+
+    void pollStatuses();
+    const timer = setInterval(() => void pollStatuses(), 10_000);
+    return () => {
+      cancelled = true;
+      clearInterval(timer);
+    };
+  }, [posts]);
 
   function toggleTheme() {
     const nextDarkMode = !document.documentElement.classList.contains("dark");
@@ -392,6 +529,9 @@ export default function DashboardClient({ initialPosts, initialStats, databaseAv
           : null;
         if (typeof savedStoreName === "string" && savedStoreName.trim()) {
           setStoreName(savedStoreName.trim());
+        }
+        if (value && typeof value === "object" && "tiktokConnected" in value) {
+          setTiktokConnected(value.tiktokConnected === true);
         }
       })
       .catch(() => {
@@ -490,6 +630,7 @@ export default function DashboardClient({ initialPosts, initialStats, databaseAv
     objectUrlRef.current = null;
     setPreviewUrl("");
     setSelectedFile(null);
+    setVideoDuration(null);
     if (inputRef.current) inputRef.current.value = "";
   }
 
@@ -501,12 +642,13 @@ export default function DashboardClient({ initialPosts, initialStats, databaseAv
       setError("الملف غير مدعوم. اختاري صورة أو فيديو.");
       return;
     }
-    const maxSize = file.type.startsWith("video/") && selectedPlatforms.includes("youtube")
+    const maxSize = file.type.startsWith("video/") &&
+      selectedPlatforms.some((platform) => platform === "youtube" || platform === "tiktok")
       ? 100 * 1024 * 1024
       : 10 * 1024 * 1024;
     if (file.size > maxSize) {
       setError(maxSize > 10 * 1024 * 1024
-        ? "الحد الأقصى لحجم فيديو YouTube هو 100 ميجابايت."
+        ? "الحد الأقصى لحجم فيديو YouTube أو TikTok هو 100 ميجابايت."
         : "الحد الأقصى لحجم الملف هو 10 ميجابايت.");
       return;
     }
@@ -514,9 +656,14 @@ export default function DashboardClient({ initialPosts, initialStats, databaseAv
     objectUrlRef.current = URL.createObjectURL(file);
     setPreviewUrl(objectUrlRef.current);
     setSelectedFile(file);
+    setVideoDuration(null);
   }
 
   function togglePlatform(platform: string) {
+    if (platform === "tiktok") {
+      setTiktokInfoError("");
+      setTiktokConsent(false);
+    }
     setSelectedPlatforms((current) =>
       current.includes(platform) ? current.filter((item) => item !== platform) : [...current, platform],
     );
@@ -558,6 +705,39 @@ export default function DashboardClient({ initialPosts, initialStats, databaseAv
       }
       if (youtubeTags.split(",").map((tag) => tag.trim()).join("").length > 500) {
         setError("مجموع أحرف وسوم YouTube يجب ألا يتجاوز 500 حرف.");
+        return;
+      }
+    }
+    if (selectedPlatforms.includes("tiktok")) {
+      if (!selectedFile.type.startsWith("video/")) {
+        setError("اختاري ملف فيديو للنشر على TikTok.");
+        return;
+      }
+      if (selectedFile.size > 100 * 1024 * 1024) {
+        setError("الحد الأقصى لحجم فيديو TikTok هو 100 ميجابايت.");
+        return;
+      }
+      if (!tiktokConnected) {
+        setError("اربطي حساب TikTok من الإعدادات قبل النشر.");
+        return;
+      }
+      if (tiktokInfoError || !tiktokCanPost || !tiktokPrivacyOptions.includes(tiktokPrivacyLevel)) {
+        setError(tiktokInfoError || "تعذر التحقق من خيارات النشر لحساب TikTok. أعيدي المحاولة.");
+        return;
+      }
+      if (tiktokMaxDuration !== null &&
+        (videoDuration === null || videoDuration > tiktokMaxDuration)) {
+        setError(videoDuration === null
+          ? "انتظري حتى يتم التحقق من مدة الفيديو قبل النشر على TikTok."
+          : `مدة الفيديو تتجاوز الحد الأقصى لهذا الحساب وهو ${tiktokMaxDuration} ثانية.`);
+        return;
+      }
+      if (!tiktokConsent) {
+        setError("أكدي السماح بإرسال الفيديو إلى TikTok قبل النشر.");
+        return;
+      }
+      if (caption.length > 2200) {
+        setError("وصف TikTok لا يمكن أن يتجاوز 2200 حرف.");
         return;
       }
     }
@@ -603,6 +783,7 @@ export default function DashboardClient({ initialPosts, initialStats, databaseAv
         cloudinaryPublicId: upload.publicId,
         mediaType: selectedFile.type.startsWith("video/") ? "video" : "image",
         platforms: selectedPlatforms,
+        ...(selectedPlatforms.includes("tiktok") ? { tiktokPrivacyLevel } : {}),
         ...(selectedPlatforms.includes("youtube")
           ? {
               youtubeTitle: youtubeTitle.trim(),
@@ -622,7 +803,7 @@ export default function DashboardClient({ initialPosts, initialStats, databaseAv
       }
 
       let savedPost = result.post;
-      if (selectedPlatforms.some((platform) => platform === "facebook" || platform === "instagram" || platform === "youtube")) {
+      if (selectedPlatforms.some((platform) => platform === "facebook" || platform === "instagram" || platform === "tiktok" || platform === "youtube")) {
         try {
           const publishResponse = await fetch(`/api/posts/${encodeURIComponent(savedPost.id)}/publish`, {
             method: "POST",
@@ -663,6 +844,7 @@ export default function DashboardClient({ initialPosts, initialStats, databaseAv
       setYoutubeTitle("");
       setYoutubeDescription(DEFAULT_YOUTUBE_DESCRIPTION);
       setYoutubeTags(DEFAULT_YOUTUBE_TAGS);
+      setTiktokConsent(false);
     } catch {
       setError("حدث خطأ غير متوقع. يرجى المحاولة مرة أخرى.");
     } finally {
@@ -760,7 +942,7 @@ export default function DashboardClient({ initialPosts, initialStats, databaseAv
                   <div>
                     <div className="mb-3 flex items-center justify-between">
                       <label htmlFor="media-file" className="text-sm font-bold text-[#3b463f]">الوسائط</label>
-                      <span className="text-[11px] text-[#9b9d95]">صورة أو فيديو · حتى 10 MB</span>
+                      <span className="text-[11px] text-[#9b9d95]">صورة أو فيديو · حتى 100 MB لفيديو YouTube أو TikTok</span>
                     </div>
                     <input
                       ref={inputRef}
@@ -774,7 +956,12 @@ export default function DashboardClient({ initialPosts, initialStats, databaseAv
                       <div className="relative overflow-hidden rounded-2xl border border-[#e9e7e0] bg-[#f6f4ef]">
                         <div className="relative aspect-[16/8] max-h-[340px] w-full">
                           {selectedFile.type.startsWith("video/") ? (
-                            <video src={previewUrl} className="size-full object-contain" controls />
+                            <video
+                              src={previewUrl}
+                              className="size-full object-contain"
+                              controls
+                              onLoadedMetadata={(event) => setVideoDuration(event.currentTarget.duration)}
+                            />
                           ) : (
                             <Image src={previewUrl} alt="معاينة الوسائط المختارة" fill sizes="(max-width: 768px) 100vw, 720px" className="object-contain" unoptimized />
                           )}
@@ -833,6 +1020,53 @@ export default function DashboardClient({ initialPosts, initialStats, databaseAv
                     </div>
                   </div>
 
+                  {tiktokSelected ? (
+                    <div className="space-y-4 rounded-2xl border border-[#e5e2e9] bg-[#fbfafc] p-4 sm:p-5">
+                      <div>
+                        <h3 className="text-sm font-bold text-[#3b463f]">تفاصيل النشر على TikTok</h3>
+                        <p className="mt-1 text-[11px] text-[#92958d]">
+                          {tiktokCreatorNickname
+                            ? `حساب النشر: ${tiktokCreatorNickname} · `
+                            : ""}
+                          {tiktokInfoError
+                            ? tiktokInfoError
+                            : !tiktokCanPost
+                              ? "جارٍ التحقق من حساب TikTok وخيارات النشر..."
+                              : `خيارات النشر الخاصة بحساب ${tiktokMaxDuration ? `· الحد الأقصى ${tiktokMaxDuration} ثانية` : ""}`}
+                        </p>
+                      </div>
+                      {tiktokPrivacyOptions.length > 0 ? (
+                        <div>
+                          <label htmlFor="tiktok-privacy" className="mb-2 block text-xs font-semibold text-[#536057]">خصوصية الفيديو</label>
+                          <select
+                            id="tiktok-privacy"
+                            value={tiktokPrivacyLevel}
+                            onChange={(event) => {
+                              if (isTikTokPrivacyLevel(event.target.value)) setTiktokPrivacyLevel(event.target.value);
+                            }}
+                            className="w-full rounded-xl border border-[#e9e8e1] bg-white px-3.5 py-3 text-sm outline-none focus:border-[#a3bba7]"
+                          >
+                            {tiktokPrivacyOptions.map((option) => (
+                              <option key={option} value={option}>{TIKTOK_PRIVACY_LABELS[option]}</option>
+                            ))}
+                          </select>
+                        </div>
+                      ) : null}
+                      {!tiktokCanPost && !tiktokInfoError ? (
+                        <p role="status" className="text-xs text-[#a07035]">لا يمكن لهذا الحساب النشر حالياً أو لم تكتمل قراءة الخيارات بعد.</p>
+                      ) : null}
+                      <label className="flex items-start gap-2.5 text-xs leading-6 text-[#59635b]">
+                        <input
+                          type="checkbox"
+                          checked={tiktokConsent}
+                          onChange={(event) => setTiktokConsent(event.target.checked)}
+                          className="mt-1 accent-[#205c4e]"
+                        />
+                        <span>أوافق على إرسال هذا الفيديو والنص أعلاه إلى TikTok ونشره على الحساب المتصل.</span>
+                      </label>
+                    </div>
+                  ) : null}
+
                   {selectedPlatforms.includes("youtube") ? (
                     <div className="space-y-4 rounded-2xl border border-[#f0dcdc] bg-[#fffafa] p-4 sm:p-5">
                       <div>
@@ -885,12 +1119,13 @@ export default function DashboardClient({ initialPosts, initialStats, databaseAv
                             type="button"
                             aria-pressed={selected}
                             onClick={() => togglePlatform(platform.id)}
-                            className={`flex items-center gap-2.5 rounded-xl border p-3 text-right transition ${selected ? "border-[#a9c1ac] bg-[#f2f7f1] ring-1 ring-[#e5eee4]" : "border-[#eeece6] bg-white hover:border-[#d9ded5] hover:bg-[#fbfbf8]"}`}
+                            disabled={platform.id === "tiktok" && !tiktokConnected}
+                            className={`flex items-center gap-2.5 rounded-xl border p-3 text-right transition ${selected ? "border-[#a9c1ac] bg-[#f2f7f1] ring-1 ring-[#e5eee4]" : "border-[#eeece6] bg-white hover:border-[#d9ded5] hover:bg-[#fbfbf8]"} disabled:cursor-not-allowed disabled:opacity-55`}
                           >
                             <PlatformMark platform={platform} />
                             <span className="min-w-0 flex-1">
                               <span className="block text-xs font-bold text-[#455047]">{platform.name}</span>
-                              <span className="mt-1 block truncate text-[10px] text-[#9a9c94]">{platform.subtitle}</span>
+                              <span className="mt-1 block truncate text-[10px] text-[#9a9c94]">{platform.id === "tiktok" && !tiktokConnected ? "اربطِي الحساب من الإعدادات أولاً" : platform.subtitle}</span>
                             </span>
                             <span className={`grid size-[18px] shrink-0 place-items-center rounded-md border ${selected ? "border-[#3f806d] bg-[#3f806d] text-white" : "border-[#d9dcd4] bg-white text-transparent"}`}>
                               <Check size={12} strokeWidth={3} />
@@ -946,7 +1181,7 @@ export default function DashboardClient({ initialPosts, initialStats, databaseAv
                       <div key={platform.id} className="flex items-center gap-3">
                         <PlatformMark platform={platform} />
                         <span className="flex-1 text-xs font-semibold text-[#59635b]">{platform.name}</span>
-                        <span className="rounded-full bg-[#f4f3ef] px-2 py-1 text-[10px] font-semibold text-[#85867e]">متاحة</span>
+                        <span className="rounded-full bg-[#f4f3ef] px-2 py-1 text-[10px] font-semibold text-[#85867e]">{platform.id === "tiktok" ? tiktokConnected ? "متصل" : "غير مرتبط" : "متاحة"}</span>
                       </div>
                     ))}
                   </div>

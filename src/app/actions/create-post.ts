@@ -2,6 +2,7 @@
 
 import { prisma } from "@/lib/prisma";
 import { isAdminAuthenticated } from "@/lib/admin-auth";
+import { isTikTokPrivacyLevel } from "@/lib/tiktok";
 
 const ALLOWED_PLATFORMS = new Set(["facebook", "instagram", "tiktok", "youtube", "snapchat"]);
 
@@ -11,6 +12,7 @@ export type CreatePostInput = {
   cloudinaryPublicId: string;
   mediaType: "image" | "video";
   platforms: string[];
+  tiktokPrivacyLevel?: "PUBLIC_TO_EVERYONE" | "MUTUAL_FOLLOW_FRIENDS" | "FOLLOWER_OF_CREATOR" | "SELF_ONLY";
   youtubeTitle?: string;
   youtubeDescription?: string;
   youtubeTags?: string[];
@@ -27,6 +29,7 @@ export type SavedPost = {
   status: "PENDING" | "PUBLISHING" | "PUBLISHED" | "FAILED" | "UNKNOWN";
   facebookStatus: "PENDING" | "PUBLISHING" | "PUBLISHED" | "FAILED" | "UNKNOWN" | null;
   instagramStatus: "PENDING" | "PUBLISHING" | "PUBLISHED" | "FAILED" | "UNKNOWN" | null;
+  tiktokStatus: "PENDING" | "PUBLISHING" | "PUBLISHED" | "FAILED" | "UNKNOWN" | null;
   youtubeStatus: "PENDING" | "PUBLISHING" | "PUBLISHED" | "FAILED" | "UNKNOWN" | null;
   youtubeTitle: string;
   youtubeDescription: string;
@@ -35,6 +38,11 @@ export type SavedPost = {
   youtubeVideoId: string | null;
   youtubeVideoUrl: string | null;
   youtubeError: string | null;
+  tiktokPublishId: string | null;
+  tiktokVideoId: string | null;
+  tiktokVideoUrl: string | null;
+  tiktokError: string | null;
+  tiktokPrivacyLevel: "PUBLIC_TO_EVERYONE" | "MUTUAL_FOLLOW_FRIENDS" | "FOLLOWER_OF_CREATOR" | "SELF_ONLY";
   facebookError: string | null;
   instagramError: string | null;
   createdAt: string;
@@ -67,6 +75,10 @@ export async function createPost(input: CreatePostInput): Promise<CreatePostResu
   const youtubePrivacyValid = input?.youtubePrivacyStatus === undefined ||
     input.youtubePrivacyStatus === "public" || input.youtubePrivacyStatus === "unlisted";
   const youtubePrivacyStatus = input?.youtubePrivacyStatus === "public" ? "public" : "unlisted";
+  const requestedTikTokPrivacy = input?.tiktokPrivacyLevel ?? "PUBLIC_TO_EVERYONE";
+  const tiktokPrivacyLevel = isTikTokPrivacyLevel(requestedTikTokPrivacy)
+    ? requestedTikTokPrivacy
+    : null;
   const platforms = Array.isArray(input?.platforms)
     ? [...new Set(input.platforms.filter((platform) => typeof platform === "string" && ALLOWED_PLATFORMS.has(platform)))]
     : [];
@@ -87,6 +99,12 @@ export async function createPost(input: CreatePostInput): Promise<CreatePostResu
   if (!cloudinaryPublicId || cloudinaryPublicId.length > 512 || platforms.length === 0) {
     return { success: false, error: "اختر منصة واحدة على الأقل وتأكد من الملف المرفوع." };
   }
+  if (platforms.includes("tiktok") && mediaType !== "video") {
+    return { success: false, error: "النشر على TikTok يتطلب اختيار ملف فيديو." };
+  }
+  if (platforms.includes("tiktok") && !tiktokPrivacyLevel) {
+    return { success: false, error: "اختاري إعداد خصوصية صالحاً لحساب TikTok." };
+  }
   if (
     platforms.includes("youtube") &&
     (mediaType !== "video" || !youtubeTitle || youtubeTitle.length > 100 ||
@@ -106,6 +124,12 @@ export async function createPost(input: CreatePostInput): Promise<CreatePostResu
         mediaType,
         ...(platforms.includes("facebook") ? { facebookStatus: "PENDING" as const } : {}),
         ...(platforms.includes("instagram") ? { instagramStatus: "PENDING" as const } : {}),
+        ...(platforms.includes("tiktok")
+          ? {
+              tiktokStatus: "PENDING" as const,
+              tiktokPrivacyLevel: tiktokPrivacyLevel ?? "PUBLIC_TO_EVERYONE",
+            }
+          : {}),
         ...(platforms.includes("youtube")
           ? {
               youtubeStatus: "PENDING" as const,
@@ -130,6 +154,7 @@ export async function createPost(input: CreatePostInput): Promise<CreatePostResu
         status: post.status,
         facebookStatus: post.facebookStatus,
         instagramStatus: post.instagramStatus,
+        tiktokStatus: post.tiktokStatus,
         youtubeStatus: post.youtubeStatus,
         youtubeTitle: post.youtubeTitle,
         youtubeDescription: post.youtubeDescription,
@@ -138,6 +163,13 @@ export async function createPost(input: CreatePostInput): Promise<CreatePostResu
         youtubeVideoId: post.youtubeVideoId,
         youtubeVideoUrl: post.youtubeVideoUrl,
         youtubeError: post.youtubeError,
+        tiktokPublishId: post.tiktokPublishId,
+        tiktokVideoId: post.tiktokVideoId,
+        tiktokVideoUrl: post.tiktokVideoUrl,
+        tiktokError: post.tiktokError,
+        tiktokPrivacyLevel: isTikTokPrivacyLevel(post.tiktokPrivacyLevel)
+          ? post.tiktokPrivacyLevel
+          : "PUBLIC_TO_EVERYONE",
         facebookError: post.facebookError,
         instagramError: post.instagramError,
         createdAt: post.createdAt.toISOString(),

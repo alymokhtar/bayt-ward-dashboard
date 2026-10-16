@@ -30,6 +30,12 @@ model Post {
   instagramPostId    String?     @db.Text
   facebookError      String?     @db.Text
   instagramError     String?     @db.Text
+  tiktokStatus       PostStatus?
+  tiktokPublishId    String?     @db.Text
+  tiktokVideoId      String?     @db.Text
+  tiktokVideoUrl     String?     @db.Text
+  tiktokError        String?     @db.Text
+  tiktokPrivacyLevel String      @default("PUBLIC_TO_EVERYONE") @db.VarChar(40)
   youtubeStatus      PostStatus?
   youtubeTitle       String      @default("") @db.Text
   youtubeDescription String      @default("") @db.Text
@@ -48,6 +54,12 @@ model Settings {
   facebookPageId           String   @default("") @db.Text
   instagramAccountId       String   @default("") @db.Text
   tiktokAccountId          String   @default("") @db.Text
+  tiktokOpenId             String   @default("") @db.Text
+  tiktokDisplayName         String   @default("") @db.Text
+  tiktokAccessToken         String   @default("") @db.Text
+  tiktokRefreshToken        String   @default("") @db.Text
+  tiktokTokenExpiresAt      DateTime?
+  tiktokRefreshTokenExpiresAt DateTime?
   youtubeChannelId         String   @default("") @db.Text
   youtubeChannelTitle      String   @default("") @db.Text
   youtubeAccessToken       String   @default("") @db.Text

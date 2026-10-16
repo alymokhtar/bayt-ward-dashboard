@@ -4,13 +4,14 @@ import { isAdminAuthenticated } from "@/lib/admin-auth";
 import { decryptMetaToken } from "@/lib/meta-token";
 import { MetaGraphError, publishFacebookPost, publishInstagramPost } from "@/lib/meta-graph";
 import { downloadCloudinaryVideo, uploadYouTubeVideo, YouTubeUploadError } from "@/lib/youtube";
+import { TikTokPublishError, uploadTikTokVideo } from "@/lib/tiktok";
 import { prisma } from "@/lib/prisma";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
 export const maxDuration = 300;
 
-type Platform = "facebook" | "instagram" | "youtube";
+type Platform = "facebook" | "instagram" | "tiktok" | "youtube";
 
 function jsonError(message: string, status: number) {
   return NextResponse.json({ error: message }, { status, headers: { "Cache-Control": "no-store" } });
@@ -42,6 +43,7 @@ function toSavedPost(post: {
   status: PostStatus;
   facebookStatus: PostStatus | null;
   instagramStatus: PostStatus | null;
+  tiktokStatus: PostStatus | null;
   youtubeStatus: PostStatus | null;
   youtubeTitle: string;
   youtubeDescription: string;
@@ -52,6 +54,11 @@ function toSavedPost(post: {
   youtubeError: string | null;
   facebookError: string | null;
   instagramError: string | null;
+  tiktokPublishId: string | null;
+  tiktokVideoId: string | null;
+  tiktokVideoUrl: string | null;
+  tiktokError: string | null;
+  tiktokPrivacyLevel: string;
   createdAt: Date;
 }) {
   return {
@@ -64,6 +71,7 @@ function toSavedPost(post: {
       ? post.youtubeTags.filter((tag): tag is string => typeof tag === "string")
       : [],
     youtubePrivacyStatus: post.youtubePrivacyStatus === "public" ? "public" as const : "unlisted" as const,
+    tiktokPrivacyLevel: post.tiktokPrivacyLevel,
     createdAt: post.createdAt.toISOString(),
   };
 }
@@ -76,6 +84,7 @@ function currentStatus(post: {
   platforms: unknown;
   facebookStatus: PostStatus | null;
   instagramStatus: PostStatus | null;
+  tiktokStatus: PostStatus | null;
   youtubeStatus: PostStatus | null;
 }) {
   const platforms = Array.isArray(post.platforms)
@@ -84,6 +93,7 @@ function currentStatus(post: {
   const statuses = platforms.flatMap((platform) => {
     if (platform === "facebook") return post.facebookStatus ? [post.facebookStatus] : [];
     if (platform === "instagram") return post.instagramStatus ? [post.instagramStatus] : [];
+    if (platform === "tiktok") return post.tiktokStatus ? [post.tiktokStatus] : [];
     if (platform === "youtube") return post.youtubeStatus ? [post.youtubeStatus] : [];
     return [];
   });
@@ -91,7 +101,8 @@ function currentStatus(post: {
   if (statuses.includes(PostStatus.FAILED)) return PostStatus.FAILED;
   if (statuses.includes(PostStatus.UNKNOWN)) return PostStatus.UNKNOWN;
   const hasUnsupportedPlatform = platforms.some(
-    (platform) => platform !== "facebook" && platform !== "instagram" && platform !== "youtube",
+    (platform) => platform !== "facebook" && platform !== "instagram" &&
+      platform !== "tiktok" && platform !== "youtube",
   );
   if (hasUnsupportedPlatform || statuses.length !== platforms.length) return PostStatus.PENDING;
   return PostStatus.PUBLISHED;
@@ -120,7 +131,8 @@ export async function POST(
     : [];
   const targets = [...new Set(platforms.filter(
     (platform): platform is Platform =>
-      platform === "facebook" || platform === "instagram" || platform === "youtube",
+      platform === "facebook" || platform === "instagram" ||
+      platform === "tiktok" || platform === "youtube",
   ))];
   if (targets.length === 0) {
     return jsonError("لا يحتوي المنشور على منصة مدعومة للنشر المباشر.", 400);
@@ -132,7 +144,8 @@ export async function POST(
   const pendingTargets = targets.filter((platform) => isRetryable(
     platform === "facebook"
       ? post.facebookStatus
-      : platform === "instagram" ? post.instagramStatus : post.youtubeStatus,
+      : platform === "instagram" ? post.instagramStatus
+      : platform === "tiktok" ? post.tiktokStatus : post.youtubeStatus,
   ));
   if (pendingTargets.length === 0) {
     return NextResponse.json({ post: toSavedPost(post) }, { headers: { "Cache-Control": "no-store" } });
@@ -175,6 +188,9 @@ export async function POST(
       ...(pendingTargets.includes("instagram")
         ? [{ instagramStatus: { in: [PostStatus.PENDING, PostStatus.FAILED] } }, { instagramStatus: null }]
         : []),
+      ...(pendingTargets.includes("tiktok")
+        ? [{ tiktokStatus: { in: [PostStatus.PENDING, PostStatus.FAILED] } }, { tiktokStatus: null }]
+        : []),
       ...(pendingTargets.includes("youtube")
         ? [{ youtubeStatus: { in: [PostStatus.PENDING, PostStatus.FAILED] } }, { youtubeStatus: null }]
         : []),
@@ -187,6 +203,9 @@ export async function POST(
       : {}),
     ...(pendingTargets.includes("instagram")
       ? { instagramStatus: PostStatus.PUBLISHING, instagramError: null }
+      : {}),
+    ...(pendingTargets.includes("tiktok")
+      ? { tiktokStatus: PostStatus.PUBLISHING, tiktokError: null }
       : {}),
     ...(pendingTargets.includes("youtube")
       ? { youtubeStatus: PostStatus.PUBLISHING, youtubeError: null }
@@ -239,6 +258,35 @@ export async function POST(
         return { platform, postId: uploaded.videoId, url: uploaded.url };
       }
 
+      if (platform === "tiktok") {
+        if (post.mediaType !== "video") throw new Error("TikTok publishing requires a video.");
+        if (post.caption.length > 2200) {
+          throw new Error("TikTok captions cannot exceed 2,200 characters.");
+        }
+        const uploaded = await uploadTikTokVideo({
+          mediaUrl: post.mediaUrl,
+          caption: post.caption,
+          privacyLevel: post.tiktokPrivacyLevel,
+        });
+        try {
+          await prisma.post.update({
+            where: { id: post.id },
+            data: {
+              tiktokStatus: PostStatus.PUBLISHING,
+              tiktokPublishId: uploaded.publishId,
+              tiktokError: null,
+            },
+          });
+        } catch {
+          throw new TikTokPublishError(
+            "TikTok accepted the video, but its publish ID could not be saved. Check TikTok before retrying.",
+            true,
+            uploaded.publishId,
+          );
+        }
+        return { platform, publishId: uploaded.publishId };
+      }
+
       if (metaConfigurationError) throw new Error(metaConfigurationError);
       publishedId = platform === "facebook"
         ? await publishFacebookPost(metaSettings, metaInput)
@@ -246,12 +294,22 @@ export async function POST(
     } catch (error) {
       const unknown = platform === "youtube"
         ? error instanceof YouTubeUploadError && error.outcomeUnknown
-        : error instanceof MetaGraphError && error.outcomeUnknown;
+        : platform === "tiktok"
+          ? error instanceof TikTokPublishError && error.outcomeUnknown
+          : error instanceof MetaGraphError && error.outcomeUnknown;
       const message = sanitizeError(error, accessToken);
       await prisma.post.update({
         where: { id: post.id },
         data: platform === "youtube"
           ? { youtubeStatus: unknown ? PostStatus.UNKNOWN : PostStatus.FAILED, youtubeError: message }
+          : platform === "tiktok"
+            ? {
+                tiktokStatus: unknown ? PostStatus.UNKNOWN : PostStatus.FAILED,
+                tiktokError: message,
+                ...(error instanceof TikTokPublishError && error.publishId
+                  ? { tiktokPublishId: error.publishId }
+                  : {}),
+              }
           : platform === "facebook"
             ? { facebookStatus: unknown ? PostStatus.UNKNOWN : PostStatus.FAILED, facebookError: message }
             : { instagramStatus: unknown ? PostStatus.UNKNOWN : PostStatus.FAILED, instagramError: message },
@@ -295,6 +353,7 @@ export async function POST(
             platforms: true,
             facebookStatus: true,
             instagramStatus: true,
+            tiktokStatus: true,
             youtubeStatus: true,
           },
         })),

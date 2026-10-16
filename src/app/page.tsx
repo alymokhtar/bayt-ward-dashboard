@@ -2,6 +2,7 @@ import { PostStatus } from "@prisma/client";
 import DashboardClient from "./dashboard-client";
 import type { SavedPost } from "@/app/actions/create-post";
 import { prisma } from "@/lib/prisma";
+import { isTikTokPrivacyLevel } from "@/lib/tiktok";
 
 export const dynamic = "force-dynamic";
 
@@ -25,6 +26,7 @@ export default async function Home() {
           status: true,
           facebookStatus: true,
           instagramStatus: true,
+          tiktokStatus: true,
           youtubeStatus: true,
           youtubeTitle: true,
           youtubeDescription: true,
@@ -33,6 +35,11 @@ export default async function Home() {
           youtubeVideoId: true,
           youtubeVideoUrl: true,
           youtubeError: true,
+          tiktokPublishId: true,
+          tiktokVideoId: true,
+          tiktokVideoUrl: true,
+          tiktokError: true,
+          tiktokPrivacyLevel: true,
           facebookError: true,
           instagramError: true,
           createdAt: true,
@@ -53,6 +60,9 @@ export default async function Home() {
         ? post.youtubeTags.filter((tag): tag is string => typeof tag === "string")
         : [],
       youtubePrivacyStatus: post.youtubePrivacyStatus === "public" ? "public" : "unlisted",
+      tiktokPrivacyLevel: isTikTokPrivacyLevel(post.tiktokPrivacyLevel)
+        ? post.tiktokPrivacyLevel
+        : "PUBLIC_TO_EVERYONE",
       createdAt: post.createdAt.toISOString(),
     }));
     stats = { total, pending, published };

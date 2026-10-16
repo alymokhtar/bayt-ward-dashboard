@@ -28,6 +28,12 @@ Keep `META_TOKEN_ENCRYPTION_KEY` backed up and out of source control; changing i
 
 The standalone endpoint responds with `videoId` and the YouTube watch `url`. Dashboard video uploads are limited to 100 MiB; file size limits for deployments may be lower than the platform's YouTube API limit. Use HTTPS in deployed environments.
 
+## TikTok Content Posting
+
+Configure `TIKTOK_CLIENT_KEY`, `TIKTOK_CLIENT_SECRET`, and `TIKTOK_REDIRECT_URI` on the server. Register the exact HTTPS callback URL ending in `/api/auth/tiktok/callback` in TikTok Login Kit. Use `https://<fixed-https-tunnel-host>/api/auth/tiktok/callback` for local testing and `https://<production-domain>/api/auth/tiktok/callback` for production; TikTok web Login Kit does not accept plain HTTP localhost callbacks. Enable the Content Posting API and request `user.info.basic` and `video.publish` for Direct Post. TikTok OAuth access and refresh tokens are encrypted at rest using `META_TOKEN_ENCRYPTION_KEY`.
+
+Apply the TikTok database migration with `npx prisma migrate deploy`. In the dashboard, connect the account from Settings, select TikTok when creating a video post, choose one of the creator's currently available privacy settings, and confirm the publish action. The app uploads the video in sequential chunks and checks TikTok's asynchronous publish status. Videos sent via an unaudited Content Posting API client may be restricted to private viewing by TikTok; complete TikTok's app audit before expecting public distribution.
+
 ## Learn More
 
 To learn more about Next.js, take a look at the following resources:

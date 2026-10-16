@@ -35,13 +35,16 @@ export async function uploadMedia(formData: FormData): Promise<UploadMediaResult
     return { success: false, error: "نوع الملف غير مدعوم. ارفع صورة أو فيديو بصيغة مدعومة." };
   }
 
-  const isYoutubeVideo = formData.getAll("platforms").includes("youtube") && file.type.startsWith("video/");
-  const maxFileSize = isYoutubeVideo ? MAX_VIDEO_SIZE : MAX_IMAGE_SIZE;
+  const platforms = formData.getAll("platforms");
+  const isLargeVideo = platforms.some((platform) =>
+    (platform === "youtube" || platform === "tiktok") && file.type.startsWith("video/"),
+  );
+  const maxFileSize = isLargeVideo ? MAX_VIDEO_SIZE : MAX_IMAGE_SIZE;
   if (file.size > maxFileSize) {
     return {
       success: false,
-      error: isYoutubeVideo
-        ? "الحد الأقصى لحجم فيديو YouTube هو 100 ميجابايت."
+      error: isLargeVideo
+        ? "الحد الأقصى لحجم فيديو YouTube أو TikTok هو 100 ميجابايت."
         : "الحد الأقصى لحجم الملف هو 10 ميجابايت.",
     };
   }

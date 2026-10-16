@@ -54,3 +54,11 @@ export function encryptYoutubeToken(token: string) {
 export function decryptYoutubeToken(value: string) {
   return decryptToken(value);
 }
+
+export function encryptTikTokToken(token: string) {
+  return encryptToken(token);
+}
+
+export function decryptTikTokToken(value: string) {
+  return decryptToken(value);
+}

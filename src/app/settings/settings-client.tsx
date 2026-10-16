@@ -19,6 +19,7 @@ import {
   KeyRound,
   LayoutDashboard,
   LockKeyhole,
+  Music2,
   Palette,
   Save,
   Settings2,
@@ -37,7 +38,6 @@ type SavedSettings = {
   defaultHashtags: string;
   facebookPageId: string;
   instagramAccountId: string;
-  tiktokAccountId: string;
   youtubeChannelId: string;
   snapchatClientId: string;
 };
@@ -45,6 +45,8 @@ type SavedSettings = {
 type SettingsResponse = Partial<SavedSettings> & {
   youtubeChannelTitle?: string;
   youtubeConnected?: boolean;
+  tiktokDisplayName?: string;
+  tiktokConnected?: boolean;
   snapchatTokenConfigured?: boolean;
   metaAccessTokenConfigured?: boolean;
 };
@@ -54,7 +56,6 @@ const DEFAULT_SETTINGS: SavedSettings = {
   defaultHashtags: "#بيت_ورد #تنسيق_زهور",
   facebookPageId: "",
   instagramAccountId: "",
-  tiktokAccountId: "",
   youtubeChannelId: "",
   snapchatClientId: "",
 };
@@ -77,9 +78,12 @@ export default function SettingsClient({ cloudinaryConfigured }: SettingsClientP
   const [snapchatToken, setSnapchatToken] = useState("");
   const [youtubeChannelTitle, setYoutubeChannelTitle] = useState("");
   const [youtubeConnected, setYoutubeConnected] = useState(false);
+  const [tiktokDisplayName, setTiktokDisplayName] = useState("");
+  const [tiktokConnected, setTiktokConnected] = useState(false);
   const [snapchatTokenConfigured, setSnapchatTokenConfigured] = useState(false);
   const [showSnapchatToken, setShowSnapchatToken] = useState(false);
   const [isDisconnectingYoutube, setIsDisconnectingYoutube] = useState(false);
+  const [isDisconnectingTiktok, setIsDisconnectingTiktok] = useState(false);
   const [toast, setToast] = useState("");
   const [toastIsError, setToastIsError] = useState(false);
   const toastTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
@@ -102,12 +106,13 @@ export default function SettingsClient({ cloudinaryConfigured }: SettingsClientP
           defaultHashtags: typeof values.defaultHashtags === "string" ? values.defaultHashtags : DEFAULT_SETTINGS.defaultHashtags,
           facebookPageId: typeof values.facebookPageId === "string" ? values.facebookPageId : "",
           instagramAccountId: typeof values.instagramAccountId === "string" ? values.instagramAccountId : "",
-          tiktokAccountId: typeof values.tiktokAccountId === "string" ? values.tiktokAccountId : "",
           youtubeChannelId: typeof values.youtubeChannelId === "string" ? values.youtubeChannelId : "",
           snapchatClientId: typeof values.snapchatClientId === "string" ? values.snapchatClientId : "",
         });
         setYoutubeConnected(values.youtubeConnected === true);
         setYoutubeChannelTitle(typeof values.youtubeChannelTitle === "string" ? values.youtubeChannelTitle : "");
+        setTiktokConnected(values.tiktokConnected === true);
+        setTiktokDisplayName(typeof values.tiktokDisplayName === "string" ? values.tiktokDisplayName : "");
         setSnapchatTokenConfigured(values.snapchatTokenConfigured === true);
         setMetaAccessTokenConfigured(values.metaAccessTokenConfigured === true);
       })
@@ -134,6 +139,23 @@ export default function SettingsClient({ cloudinaryConfigured }: SettingsClientP
       toastTimer.current = setTimeout(() => {
         setToast(messages[youtubeResult] ?? messages.error);
         setToastIsError(youtubeResult !== "connected");
+      }, 0);
+      window.history.replaceState({}, "", window.location.pathname);
+    }
+    const tiktokResult = new URLSearchParams(window.location.search).get("tiktok");
+    if (tiktokResult) {
+      const messages: Record<string, string> = {
+        connected: "تم ربط حساب TikTok بنجاح.",
+        denied: "تم إلغاء ربط حساب TikTok.",
+        "invalid-state": "تعذر التحقق من طلب ربط TikTok. حاولي مجدداً.",
+        "configuration-error": "إعدادات OAuth الخاصة بـ TikTok غير مكتملة على الخادم.",
+        "token-error": "تعذر استلام رموز TikTok. حاولي الربط مرة أخرى.",
+        "profile-error": "تعذر تحميل ملف حساب TikTok.",
+        error: "تعذر ربط حساب TikTok.",
+      };
+      toastTimer.current = setTimeout(() => {
+        setToast(messages[tiktokResult] ?? messages.error);
+        setToastIsError(tiktokResult !== "connected");
       }, 0);
       window.history.replaceState({}, "", window.location.pathname);
     }
@@ -174,12 +196,13 @@ export default function SettingsClient({ cloudinaryConfigured }: SettingsClientP
         defaultHashtags: typeof values.defaultHashtags === "string" ? values.defaultHashtags : current.defaultHashtags,
         facebookPageId: typeof values.facebookPageId === "string" ? values.facebookPageId : current.facebookPageId,
         instagramAccountId: typeof values.instagramAccountId === "string" ? values.instagramAccountId : current.instagramAccountId,
-        tiktokAccountId: typeof values.tiktokAccountId === "string" ? values.tiktokAccountId : current.tiktokAccountId,
         youtubeChannelId: typeof values.youtubeChannelId === "string" ? values.youtubeChannelId : current.youtubeChannelId,
         snapchatClientId: typeof values.snapchatClientId === "string" ? values.snapchatClientId : current.snapchatClientId,
       }));
       setYoutubeConnected(values.youtubeConnected === true);
       setYoutubeChannelTitle(typeof values.youtubeChannelTitle === "string" ? values.youtubeChannelTitle : "");
+      setTiktokConnected(values.tiktokConnected === true);
+      setTiktokDisplayName(typeof values.tiktokDisplayName === "string" ? values.tiktokDisplayName : "");
       setSnapchatTokenConfigured(values.snapchatTokenConfigured === true);
       setMetaAccessTokenConfigured(values.metaAccessTokenConfigured === true);
       setSnapchatToken("");
@@ -211,6 +234,7 @@ export default function SettingsClient({ cloudinaryConfigured }: SettingsClientP
           : "تعذّر فصل قناة YouTube.";
         throw new Error(message);
       }
+
       setYoutubeConnected(false);
       setYoutubeChannelTitle("");
       setSettings((current) => ({ ...current, youtubeChannelId: "" }));
@@ -221,6 +245,31 @@ export default function SettingsClient({ cloudinaryConfigured }: SettingsClientP
       setToastIsError(true);
     } finally {
       setIsDisconnectingYoutube(false);
+    }
+  }
+
+  async function disconnectTiktok() {
+    if (isDisconnectingTiktok) return;
+    setIsDisconnectingTiktok(true);
+    setSettingsError("");
+    try {
+      const response = await fetch("/api/auth/tiktok", { method: "DELETE" });
+      const result: unknown = await response.json();
+      if (!response.ok) {
+        const message = result && typeof result === "object" && "error" in result && typeof result.error === "string"
+          ? result.error
+          : "تعذّر فصل حساب TikTok.";
+        throw new Error(message);
+      }
+      setTiktokConnected(false);
+      setTiktokDisplayName("");
+      setToast("تم فصل حساب TikTok.");
+      setToastIsError(false);
+    } catch (error) {
+      setToast(error instanceof Error ? error.message : "تعذّر فصل حساب TikTok.");
+      setToastIsError(true);
+    } finally {
+      setIsDisconnectingTiktok(false);
     }
   }
 
@@ -330,12 +379,6 @@ export default function SettingsClient({ cloudinaryConfigured }: SettingsClientP
                         <input id="instagram-account-id" value={settings.instagramAccountId} onChange={(event) => updateSetting("instagramAccountId", event.target.value)} className={`${inputClass} pr-10`} placeholder="معرّف الحساب التجاري" autoComplete="off" />
                       </div>
                     </Field>
-                    <Field label="TikTok Account ID" htmlFor="tiktok-account-id" hint="معرّف حساب TikTok">
-                      <div className="relative">
-                        <Camera size={16} className="pointer-events-none absolute right-3.5 top-1/2 -translate-y-1/2 text-[#354d59]" />
-                        <input id="tiktok-account-id" value={settings.tiktokAccountId} onChange={(event) => updateSetting("tiktokAccountId", event.target.value)} className={`${inputClass} pr-10`} placeholder="معرّف الحساب" autoComplete="off" />
-                      </div>
-                    </Field>
                     <Field label="Snapchat Client ID" htmlFor="snapchat-client-id" hint="معرّف تطبيق Snapchat">
                       <div className="relative">
                         <span className="pointer-events-none absolute right-3.5 top-1/2 grid size-6 -translate-y-1/2 place-items-center rounded-md bg-[#fffc00] text-[#111]">
@@ -344,6 +387,32 @@ export default function SettingsClient({ cloudinaryConfigured }: SettingsClientP
                         <input id="snapchat-client-id" value={settings.snapchatClientId} onChange={(event) => updateSetting("snapchatClientId", event.target.value)} className={`${inputClass} pr-12`} placeholder="معرّف التطبيق" autoComplete="off" />
                       </div>
                     </Field>
+                  </div>
+
+                  <div className="rounded-2xl border border-[#ece9e2] bg-[#fbfbf8] p-4 sm:p-5">
+                    <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
+                      <div className="flex items-center gap-3">
+                        <span className="grid size-11 place-items-center rounded-xl bg-[#f1eff4] text-[#17151b]"><Music2 size={20} /></span>
+                        <div>
+                          <p className="text-sm font-bold text-[#3b463f]">حساب TikTok</p>
+                          <p className="mt-1 text-xs text-[#858a82]">
+                            {tiktokConnected ? `متصل: ${tiktokDisplayName || "TikTok"}` : "اربطِي حسابك للنشر المباشر"}
+                          </p>
+                        </div>
+                      </div>
+                      <div className="flex gap-2">
+                        <a href="/api/auth/tiktok" aria-disabled={!settingsLoaded}
+                          className={`inline-flex min-h-10 items-center justify-center rounded-xl px-4 text-xs font-bold text-white ${settingsLoaded ? "bg-[#205c4e] hover:bg-[#184d41]" : "pointer-events-none bg-[#aabbb1]"}`}>
+                          {tiktokConnected ? "إعادة ربط الحساب" : "ربط حساب TikTok"}
+                        </a>
+                        {tiktokConnected ? (
+                          <button type="button" onClick={disconnectTiktok} disabled={isDisconnectingTiktok}
+                            className="min-h-10 rounded-xl border border-[#e5c9c4] px-4 text-xs font-bold text-[#a44f46] hover:bg-[#fff5f2] disabled:opacity-50">
+                            {isDisconnectingTiktok ? "جارٍ الفصل..." : "فصل"}
+                          </button>
+                        ) : null}
+                      </div>
+                    </div>
                   </div>
 
                   <div className="rounded-2xl border border-[#ece9e2] bg-[#fbfbf8] p-4 sm:p-5">
