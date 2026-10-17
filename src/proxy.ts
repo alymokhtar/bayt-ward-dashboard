@@ -4,6 +4,7 @@ import { ADMIN_SESSION_COOKIE, isValidAdminSession } from "@/lib/admin-session";
 export function proxy(request: NextRequest) {
   const { pathname } = request.nextUrl;
   if (
+    pathname === "/tiktokyCgHIZa4Dghuzi9C9PqQxr8mMjEH3Uo4.txt" ||
     pathname === "/api/auth/login" ||
     pathname === "/api/auth/logout" ||
     pathname === "/api/auth/youtube/callback" ||
