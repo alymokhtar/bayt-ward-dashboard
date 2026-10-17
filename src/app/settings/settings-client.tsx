@@ -455,17 +455,17 @@ export default function SettingsClient({ cloudinaryConfigured }: SettingsClientP
                     </Field>
                   </div>
 
-                  <Field label="Meta Page Access Token" htmlFor="meta-access-token" hint={metaAccessTokenConfigured ? "رمز محفوظ ومشفّر — اتركيه فارغاً للاحتفاظ به" : "يُشفّر على الخادم قبل التخزين"}>
+                  <Field label="Meta System User Access Token" htmlFor="meta-access-token" hint={metaAccessTokenConfigured ? "رمز محفوظ ومشفّر — اتركيه فارغاً للاحتفاظ به" : "يُشفّر على الخادم قبل التخزين"}>
                     <div className="relative">
                       <LockKeyhole size={16} className="pointer-events-none absolute right-3.5 top-1/2 -translate-y-1/2 text-[#92978e]" />
-                      <input id="meta-access-token" type={showAccessToken ? "text" : "password"} value={metaAccessToken} onChange={(event) => setMetaAccessToken(event.target.value)} className={`${inputClass} px-11`} placeholder={metaAccessTokenConfigured ? "أدخلي رمزاً جديداً للاستبدال" : "أدخلي Page Access Token"} autoComplete="new-password" />
+                      <input id="meta-access-token" type={showAccessToken ? "text" : "password"} value={metaAccessToken} onChange={(event) => setMetaAccessToken(event.target.value)} className={`${inputClass} px-11`} placeholder={metaAccessTokenConfigured ? "أدخلي رمزاً جديداً للاستبدال" : "أدخلي System User Access Token"} autoComplete="new-password" />
                       <button type="button" onClick={() => setShowAccessToken((visible) => !visible)} className="absolute left-3 top-1/2 -translate-y-1/2 rounded-md p-1 text-[#8f948c] hover:bg-[#f4f3ef]" aria-label={showAccessToken ? "إخفاء رمز الوصول" : "إظهار رمز الوصول"}>{showAccessToken ? <EyeOff size={16} /> : <Eye size={16} />}</button>
                     </div>
                   </Field>
 
                   <div className="flex items-start gap-2.5 rounded-xl border border-[#eee9dc] bg-[#fbf9f3] px-3.5 py-3 text-[11px] leading-6 text-[#817a68]">
                     <ShieldCheck size={16} className="mt-0.5 shrink-0 text-[#8e876d]" />
-                    <p>يُخزّن رمز Meta مشفّراً ولا يُعاد إلى المتصفح. يجب أن يكون Page Access Token بصلاحيات إدارة منشورات الصفحة ونشر محتوى Instagram؛ اتركي الحقل فارغاً للاحتفاظ بالرمز الحالي.</p>
+                    <p>يُخزّن رمز Meta مشفّراً ولا يُعاد إلى المتصفح. يُستخدم System User Access Token لجلب Page Access Token عند النشر على Facebook، ويظل مستخدماً مباشرةً في مسار Instagram الحالي. اتركي الحقل فارغاً للاحتفاظ بالرمز الحالي.</p>
                   </div>
                 </div>
               </section>

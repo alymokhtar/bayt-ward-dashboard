@@ -170,7 +170,7 @@ export async function POST(
   if (pendingTargets.some((platform) => platform === "facebook" || platform === "instagram")) {
     try {
       if (!settings?.metaAccessTokenEncrypted) {
-        throw new Error("احفظي Meta Page Access Token في إعدادات المتجر قبل النشر.");
+        throw new Error("احفظي Meta System User Access Token في إعدادات المتجر قبل النشر.");
       }
       accessToken = decryptMetaToken(settings.metaAccessTokenEncrypted);
     } catch (error) {

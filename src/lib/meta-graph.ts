@@ -13,8 +13,7 @@ type MetaAccountSettings = {
   instagramAccountId: string;
 };
 
-function graphBaseUrl() {
-  const version = process.env.META_GRAPH_API_VERSION;
+function graphBaseUrl(version = process.env.META_GRAPH_API_VERSION) {
   if (!version || !/^v\d+\.\d+$/.test(version)) {
     throw new Error("اضبطي META_GRAPH_API_VERSION في إعدادات الخادم.");
   }
@@ -26,8 +25,9 @@ async function graphRequest(
   method: "GET" | "POST",
   values: Record<string, string>,
   accessToken: string,
+  apiVersion?: string,
 ): Promise<GraphResponse> {
-  const url = new URL(`${graphBaseUrl()}/${path.replace(/^\/+/, "")}`);
+  const url = new URL(`${graphBaseUrl(apiVersion)}/${path.replace(/^\/+/, "")}`);
   const headers = new Headers();
   const options: RequestInit = {
     method,
@@ -75,7 +75,9 @@ async function graphRequest(
       typeof graphError === "object" &&
       "message" in graphError &&
       typeof graphError.message === "string"
-        ? graphError.message
+        ? accessToken
+          ? graphError.message.replaceAll(accessToken, "[محجوب]")
+          : graphError.message
         : "رفضت منصة Meta طلب النشر.";
     throw new MetaGraphError(message.slice(0, 900), false);
   }
@@ -91,6 +93,24 @@ function responseId(response: GraphResponse, fallbackField?: string, outcomeUnkn
   return value;
 }
 
+async function getFacebookPageAccessToken(
+  pageId: string,
+  systemUserAccessToken: string,
+) {
+  const response = await graphRequest(
+    pageId,
+    "GET",
+    { fields: "access_token" },
+    systemUserAccessToken,
+    "v20.0",
+  );
+  const pageAccessToken = response.access_token;
+  if (typeof pageAccessToken !== "string" || !pageAccessToken) {
+    throw new MetaGraphError("لم تُرجع Meta رمز وصول صالحاً لصفحة Facebook.", false);
+  }
+  return pageAccessToken;
+}
+
 export async function publishFacebookPost(
   settings: MetaAccountSettings,
   input: { caption: string; mediaUrl: string; mediaType: "image" | "video" },
@@ -100,13 +120,17 @@ export async function publishFacebookPost(
   }
 
   const isVideo = input.mediaType === "video";
+  const pageAccessToken = await getFacebookPageAccessToken(
+    settings.facebookPageId,
+    settings.accessToken,
+  );
   const result = await graphRequest(
     `${settings.facebookPageId}/${isVideo ? "videos" : "photos"}`,
     "POST",
     isVideo
       ? { file_url: input.mediaUrl, description: input.caption, published: "true" }
       : { url: input.mediaUrl, caption: input.caption, published: "true" },
-    settings.accessToken,
+    pageAccessToken,
   );
 
   return responseId(result, "post_id", true);
