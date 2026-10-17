@@ -2,6 +2,7 @@ import { NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
 import { isAdminAuthenticated } from "@/lib/admin-auth";
 import { encryptMetaToken } from "@/lib/meta-token";
+import { FACEBOOK_PAGE_ID } from "@/constants/socials";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -19,7 +20,7 @@ export async function GET() {
   try {
     const settings = await prisma.settings.upsert({
       where: { id: SETTINGS_ID },
-      create: { id: SETTINGS_ID },
+      create: { id: SETTINGS_ID, facebookPageId: FACEBOOK_PAGE_ID },
       update: {},
       select: {
         storeName: true,
@@ -47,6 +48,7 @@ export async function GET() {
     } = settings;
     return NextResponse.json({
       ...publicSettings,
+      facebookPageId: settings.facebookPageId || FACEBOOK_PAGE_ID,
       youtubeConnected: Boolean(youtubeRefreshToken),
       tiktokConnected: Boolean(tiktokRefreshToken),
       snapchatTokenConfigured: Boolean(snapchatToken),

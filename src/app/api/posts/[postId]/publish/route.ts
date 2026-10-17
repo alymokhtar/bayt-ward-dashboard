@@ -6,6 +6,7 @@ import { MetaGraphError, publishFacebookPost, publishInstagramPost } from "@/lib
 import { downloadCloudinaryVideo, uploadYouTubeVideo, YouTubeUploadError } from "@/lib/youtube";
 import { TikTokPublishError, uploadTikTokVideo } from "@/lib/tiktok";
 import { prisma } from "@/lib/prisma";
+import { FACEBOOK_PAGE_ID } from "@/constants/socials";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -221,7 +222,7 @@ export async function POST(
 
   const metaSettings = {
     accessToken: accessToken ?? "",
-    facebookPageId: settings?.facebookPageId ?? "",
+    facebookPageId: settings?.facebookPageId || FACEBOOK_PAGE_ID,
     instagramAccountId: settings?.instagramAccountId ?? "",
   };
   const metaInput = {

@@ -5,6 +5,7 @@ import { useEffect, useRef, useState } from "react";
 import BrandMark from "@/components/brand-mark";
 import SocialPlatformIcon from "@/components/social-platform-icon";
 import AuthLogoutButton from "@/components/auth-logout-button";
+import { FACEBOOK_PAGE_ID } from "@/constants/socials";
 import {
   ArrowRight,
   Camera,
@@ -55,7 +56,7 @@ type SettingsResponse = Partial<SavedSettings> & {
 const DEFAULT_SETTINGS: SavedSettings = {
   storeName: "بيت ورد",
   defaultHashtags: "#بيت_ورد #تنسيق_زهور",
-  facebookPageId: "",
+  facebookPageId: FACEBOOK_PAGE_ID,
   instagramAccountId: "",
   youtubeChannelId: "",
   snapchatClientId: "",

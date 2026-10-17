@@ -9,6 +9,8 @@ export const SOCIAL_PLATFORMS = [
 
 export type SocialPlatform = (typeof SOCIAL_PLATFORMS)[number];
 
+export const FACEBOOK_PAGE_ID = "1398573690014828";
+
 export type SocialLink = {
   platform: SocialPlatform;
   label: string;
@@ -19,7 +21,7 @@ export const SOCIAL_LINK_FALLBACKS: Record<SocialPlatform, SocialLink | null> = 
   facebook: {
     platform: "facebook",
     label: "Facebook",
-    href: "https://www.facebook.com/61595632700592/",
+    href: `https://www.facebook.com/${FACEBOOK_PAGE_ID}/`,
   },
   instagram: {
     platform: "instagram",
