@@ -97,18 +97,53 @@ async function getFacebookPageAccessToken(
   pageId: string,
   systemUserAccessToken: string,
 ) {
-  const response = await graphRequest(
-    pageId,
-    "GET",
-    { fields: "access_token" },
-    systemUserAccessToken,
-    "v20.0",
+  let after: string | undefined;
+  const seenCursors = new Set<string>();
+
+  do {
+    const response = await graphRequest(
+      "me/accounts",
+      "GET",
+      {
+        fields: "id,access_token",
+        ...(after ? { after } : {}),
+      },
+      systemUserAccessToken,
+      "v20.0",
+    );
+    const accounts = response.data;
+    if (!Array.isArray(accounts)) {
+      throw new MetaGraphError("أعادت Meta قائمة صفحات غير صالحة.", false);
+    }
+
+    for (const account of accounts) {
+      if (!account || typeof account !== "object" || !("id" in account)) continue;
+      if (account.id !== pageId) continue;
+      if (!("access_token" in account) || typeof account.access_token !== "string" || !account.access_token) {
+        throw new MetaGraphError("لم تُرجع Meta رمز وصول صالحاً لصفحة Facebook.", false);
+      }
+      return account.access_token;
+    }
+
+    const paging = response.paging;
+    const cursors =
+      paging && typeof paging === "object" && "cursors" in paging ? paging.cursors : undefined;
+    const nextCursor =
+      cursors && typeof cursors === "object" && "after" in cursors ? cursors.after : undefined;
+    const hasNextPage =
+      paging && typeof paging === "object" && "next" in paging && typeof paging.next === "string";
+
+    if (!hasNextPage || typeof nextCursor !== "string" || !nextCursor || seenCursors.has(nextCursor)) {
+      break;
+    }
+    seenCursors.add(nextCursor);
+    after = nextCursor;
+  } while (after);
+
+  throw new MetaGraphError(
+    "لم يُعثر على صفحة Facebook المطلوبة ضمن الصفحات المتاحة لمستخدم النظام.",
+    false,
   );
-  const pageAccessToken = response.access_token;
-  if (typeof pageAccessToken !== "string" || !pageAccessToken) {
-    throw new MetaGraphError("لم تُرجع Meta رمز وصول صالحاً لصفحة Facebook.", false);
-  }
-  return pageAccessToken;
 }
 
 export async function publishFacebookPost(
