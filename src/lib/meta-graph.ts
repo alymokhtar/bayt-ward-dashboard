@@ -1,7 +1,13 @@
 type GraphResponse = Record<string, unknown>;
 
 export class MetaGraphError extends Error {
-  constructor(message: string, readonly outcomeUnknown: boolean) {
+  constructor(
+    message: string,
+    readonly outcomeUnknown: boolean,
+    readonly graphCode?: number,
+    readonly graphSubcode?: number,
+    readonly upstreamFailure = false,
+  ) {
     super(message);
     this.name = "MetaGraphError";
   }
@@ -12,6 +18,8 @@ type MetaAccountSettings = {
   facebookPageId: string;
   instagramAccountId: string;
 };
+
+const FACEBOOK_GRAPH_API_VERSION = "v25.0";
 
 function graphBaseUrl(version = process.env.META_GRAPH_API_VERSION) {
   if (!version || !/^v\d+\.\d+$/.test(version)) {
@@ -51,26 +59,32 @@ async function graphRequest(
     response = await fetch(url, options);
   } catch (error) {
     if (error instanceof DOMException && error.name === "TimeoutError") {
-      throw new MetaGraphError("انتهت مهلة الاتصال بمنصة Meta.", true);
+      throw new MetaGraphError("انتهت مهلة الاتصال بمنصة Meta.", method === "POST", undefined, undefined, true);
     }
-    throw new MetaGraphError("تعذّر الاتصال بمنصة Meta.", true);
+    throw new MetaGraphError("تعذّر الاتصال بمنصة Meta.", method === "POST", undefined, undefined, true);
   }
 
   let data: unknown;
   try {
     data = await response.json();
   } catch {
-    throw new MetaGraphError("أعادت منصة Meta استجابة غير مفهومة.", method === "POST");
+    throw new MetaGraphError(
+      "أعادت منصة Meta استجابة غير مفهومة.",
+      method === "POST",
+      undefined,
+      undefined,
+      true,
+    );
   }
 
   if (!data || typeof data !== "object") {
-    throw new MetaGraphError("أعادت منصة Meta استجابة غير صالحة.", false);
+    throw new MetaGraphError("أعادت منصة Meta استجابة غير صالحة.", false, undefined, undefined, true);
   }
 
   const result = data as GraphResponse;
   if (!response.ok || "error" in result) {
     const graphError = result.error;
-    const message =
+    const graphMessage =
       graphError &&
       typeof graphError === "object" &&
       "message" in graphError &&
@@ -79,7 +93,30 @@ async function graphRequest(
           ? graphError.message.replaceAll(accessToken, "[محجوب]")
           : graphError.message
         : "رفضت منصة Meta طلب النشر.";
-    throw new MetaGraphError(message.slice(0, 900), false);
+    const code =
+      graphError && typeof graphError === "object" && "code" in graphError &&
+      typeof graphError.code === "number"
+        ? graphError.code
+        : undefined;
+    const subcode =
+      graphError && typeof graphError === "object" && "error_subcode" in graphError &&
+      typeof graphError.error_subcode === "number"
+        ? graphError.error_subcode
+        : undefined;
+    const message = code === 190
+      ? `رمز Meta غير صالح أو منتهي الصلاحية. أعيدي إنشاء الرمز واحفظيه مجدداً. (${graphMessage})`
+      : code === 10 || code === 200
+        ? `لا يملك رمز Meta الصلاحيات اللازمة لهذا الأصل أو العملية. تحققي من صلاحيات التطبيق ومهام الصفحة وإسنادها لمستخدم النظام. (${graphMessage})`
+        : code === 100
+          ? `رفضت Meta معرّف الصفحة أو نقطة النهاية لهذا الطلب. تحققي من Facebook Page ID ونوع الأصل. (${graphMessage})`
+          : graphMessage;
+    throw new MetaGraphError(
+      message.slice(0, 900),
+      false,
+      code,
+      subcode,
+      !code && !response.ok,
+    );
   }
 
   return result;
@@ -88,7 +125,13 @@ async function graphRequest(
 function responseId(response: GraphResponse, fallbackField?: string, outcomeUnknown = false) {
   const value = (fallbackField ? response[fallbackField] : undefined) ?? response.id;
   if (typeof value !== "string" || !value) {
-    throw new MetaGraphError("لم تُرجع منصة Meta معرّف المنشور.", outcomeUnknown);
+    throw new MetaGraphError(
+      "لم تُرجع منصة Meta معرّف المنشور.",
+      outcomeUnknown,
+      undefined,
+      undefined,
+      outcomeUnknown,
+    );
   }
   return value;
 }
@@ -97,19 +140,31 @@ async function getFacebookPageAccessToken(
   pageId: string,
   systemUserAccessToken: string,
 ) {
+  const identity = await graphRequest(
+    "me",
+    "GET",
+    { fields: "id" },
+    systemUserAccessToken,
+    FACEBOOK_GRAPH_API_VERSION,
+  );
+  if (typeof identity.id !== "string" || !/^\d+$/.test(identity.id)) {
+    throw new MetaGraphError("تعذّر تحديد هوية مستخدم النظام من رمز Meta.", false);
+  }
+
   let after: string | undefined;
   const seenCursors = new Set<string>();
+  const normalizedPageId = pageId.trim();
 
   do {
     const response = await graphRequest(
-      "me/accounts",
+      `${identity.id}/assigned_pages`,
       "GET",
       {
-        fields: "id,access_token",
+        fields: "id,access_token,tasks",
         ...(after ? { after } : {}),
       },
       systemUserAccessToken,
-      "v20.0",
+      FACEBOOK_GRAPH_API_VERSION,
     );
     const accounts = response.data;
     if (!Array.isArray(accounts)) {
@@ -118,9 +173,27 @@ async function getFacebookPageAccessToken(
 
     for (const account of accounts) {
       if (!account || typeof account !== "object" || !("id" in account)) continue;
-      if (account.id !== pageId) continue;
+      const accountId =
+        typeof account.id === "string" || typeof account.id === "number"
+          ? String(account.id)
+          : "";
+      if (accountId !== normalizedPageId) continue;
+      if (
+        "tasks" in account &&
+        Array.isArray(account.tasks) &&
+        !account.tasks.includes("CREATE_CONTENT")
+      ) {
+        throw new MetaGraphError(
+          "مستخدم النظام لا يملك مهمة CREATE_CONTENT على صفحة Facebook. امنحيه صلاحية إنشاء المحتوى على الصفحة.",
+          false,
+          200,
+        );
+      }
       if (!("access_token" in account) || typeof account.access_token !== "string" || !account.access_token) {
-        throw new MetaGraphError("لم تُرجع Meta رمز وصول صالحاً لصفحة Facebook.", false);
+        throw new MetaGraphError(
+          "عثر Meta على الصفحة المسندة لمستخدم النظام، لكنه لم يُرجع Page Access Token. تحققي من صلاحيات التطبيق وإسناد الأصل.",
+          false,
+        );
       }
       return account.access_token;
     }
@@ -133,15 +206,21 @@ async function getFacebookPageAccessToken(
     const hasNextPage =
       paging && typeof paging === "object" && "next" in paging && typeof paging.next === "string";
 
-    if (!hasNextPage || typeof nextCursor !== "string" || !nextCursor || seenCursors.has(nextCursor)) {
+    if (!hasNextPage) {
       break;
+    }
+    if (typeof nextCursor !== "string" || !nextCursor) {
+      throw new MetaGraphError("أعادت Meta معلومات ترقيم صفحات غير مكتملة.", false);
+    }
+    if (seenCursors.has(nextCursor)) {
+      throw new MetaGraphError("تعذّر إكمال ترقيم الصفحات بسبب مؤشر متكرر من Meta.", false);
     }
     seenCursors.add(nextCursor);
     after = nextCursor;
   } while (after);
 
   throw new MetaGraphError(
-    "لم يُعثر على صفحة Facebook المطلوبة ضمن الصفحات المتاحة لمستخدم النظام.",
+    "لم تظهر صفحة Facebook المطلوبة ضمن الأصول المسندة إلى مستخدم النظام. تحققي من Page ID ومن إسناد الصفحة إلى مستخدم النظام في Meta Business.",
     false,
   );
 }
@@ -166,6 +245,7 @@ export async function publishFacebookPost(
       ? { file_url: input.mediaUrl, description: input.caption, published: "true" }
       : { url: input.mediaUrl, caption: input.caption, published: "true" },
     pageAccessToken,
+    FACEBOOK_GRAPH_API_VERSION,
   );
 
   return responseId(result, "post_id", true);

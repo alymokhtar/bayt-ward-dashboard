@@ -297,6 +297,9 @@ export async function POST(
         : platform === "tiktok"
           ? error instanceof TikTokPublishError && error.outcomeUnknown
           : error instanceof MetaGraphError && error.outcomeUnknown;
+      const upstreamFailure = platform === "facebook" || platform === "instagram"
+        ? error instanceof MetaGraphError && error.upstreamFailure
+        : unknown;
       const message = sanitizeError(error, accessToken);
       await prisma.post.update({
         where: { id: post.id },
@@ -314,7 +317,7 @@ export async function POST(
             ? { facebookStatus: unknown ? PostStatus.UNKNOWN : PostStatus.FAILED, facebookError: message }
             : { instagramStatus: unknown ? PostStatus.UNKNOWN : PostStatus.FAILED, instagramError: message },
       });
-      return { platform, error: message };
+      return { platform, error: message, upstreamFailure };
     }
 
     await prisma.post.update({
@@ -342,7 +345,20 @@ export async function POST(
   const fulfilledResults = results.flatMap((result) =>
     result.status === "fulfilled" ? [result.value] : [],
   );
-  const hasFailures = fulfilledResults.some((result) => "error" in result);
+  const failedResults = fulfilledResults.filter(
+    (result): result is typeof result & { error: string } => "error" in result,
+  );
+  const hasFailures = failedResults.length > 0;
+  const platformLabels: Record<Platform, string> = {
+    facebook: "Facebook",
+    instagram: "Instagram",
+    tiktok: "TikTok",
+    youtube: "YouTube",
+  };
+  const failureMessage = failedResults
+    .map((result) => `${platformLabels[result.platform]}: ${result.error}`)
+    .join(" | ");
+  const failureStatus = failedResults.some((result) => result.upstreamFailure) ? 502 : 422;
   try {
     const updatedPost = await prisma.post.update({
       where: { id: post.id },
@@ -362,9 +378,9 @@ export async function POST(
     return NextResponse.json({
       post: toSavedPost(updatedPost),
       results: fulfilledResults,
-      ...(hasFailures ? { error: "تعذّر النشر على منصة واحدة أو أكثر." } : {}),
+      ...(hasFailures ? { error: failureMessage } : {}),
     }, {
-      status: hasFailures ? 502 : 200,
+      status: hasFailures ? failureStatus : 200,
       headers: { "Cache-Control": "no-store" },
     });
   } catch {

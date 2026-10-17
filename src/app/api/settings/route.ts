@@ -190,6 +190,7 @@ export async function PUT(request: Request) {
       tiktokConnected: Boolean(tiktokRefreshToken),
       snapchatTokenConfigured: Boolean(snapchatToken),
       metaAccessTokenConfigured: Boolean(metaAccessTokenEncrypted),
+      metaAccessTokenUpdated: Boolean(encryptedMetaAccessToken),
     }, {
       headers: { "Cache-Control": "no-store" },
     });

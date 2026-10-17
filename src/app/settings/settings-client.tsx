@@ -49,6 +49,7 @@ type SettingsResponse = Partial<SavedSettings> & {
   tiktokConnected?: boolean;
   snapchatTokenConfigured?: boolean;
   metaAccessTokenConfigured?: boolean;
+  metaAccessTokenUpdated?: boolean;
 };
 
 const DEFAULT_SETTINGS: SavedSettings = {
@@ -207,7 +208,9 @@ export default function SettingsClient({ cloudinaryConfigured }: SettingsClientP
       setMetaAccessTokenConfigured(values.metaAccessTokenConfigured === true);
       setSnapchatToken("");
       setMetaAccessToken("");
-      setToast("تم حفظ التغييرات في قاعدة البيانات بنجاح.");
+      setToast(values.metaAccessTokenUpdated
+        ? "تم تحديث رمز Meta وحفظه مشفّراً بنجاح."
+        : "تم حفظ التغييرات في قاعدة البيانات بنجاح.");
       setToastIsError(false);
       if (toastTimer.current) clearTimeout(toastTimer.current);
       toastTimer.current = setTimeout(() => setToast(""), 4500);
@@ -465,7 +468,7 @@ export default function SettingsClient({ cloudinaryConfigured }: SettingsClientP
 
                   <div className="flex items-start gap-2.5 rounded-xl border border-[#eee9dc] bg-[#fbf9f3] px-3.5 py-3 text-[11px] leading-6 text-[#817a68]">
                     <ShieldCheck size={16} className="mt-0.5 shrink-0 text-[#8e876d]" />
-                    <p>يُخزّن رمز Meta مشفّراً ولا يُعاد إلى المتصفح. يُستخدم System User Access Token لجلب Page Access Token عند النشر على Facebook، ويظل مستخدماً مباشرةً في مسار Instagram الحالي. اتركي الحقل فارغاً للاحتفاظ بالرمز الحالي.</p>
+                    <p>يُخزّن رمز Meta مشفّراً ولا يُعاد إلى المتصفح. يُستخدم System User Access Token لجلب Page Access Token عند النشر على Facebook، ويظل مستخدماً مباشرةً في مسار Instagram الحالي. توليد رمز جديد في Meta لا يحدّثه هنا تلقائياً؛ الصقي الرمز الجديد واحفظي الإعدادات لاستبداله. اتركي الحقل فارغاً للاحتفاظ بالرمز الحالي.</p>
                   </div>
                 </div>
               </section>
