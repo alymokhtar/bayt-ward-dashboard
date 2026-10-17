@@ -278,22 +278,25 @@ function HistorySection({ posts, databaseAvailable, searchTerm, onDelete, onRetr
                     <span>{date}</span><span aria-hidden="true">·</span>
                     {post.platforms.map((platform) => <span key={platform} className="capitalize">{platform}</span>)}
                   </div>
-                  {post.platforms.some((platform) => platform === "facebook" || platform === "instagram" || platform === "tiktok" || platform === "youtube") ? (
+                  {post.platforms.some((platform) => platform === "facebook" || platform === "instagram" || platform === "tiktok" || platform === "youtube" || platform === "snapchat") ? (
                     <div className="mt-2 space-y-1.5">
-                      {(["facebook", "instagram", "tiktok", "youtube"] as const).map((platform) => {
+                    {(["facebook", "instagram", "tiktok", "youtube", "snapchat"] as const).map((platform) => {
                         if (!post.platforms.includes(platform)) return null;
                         const status = platform === "facebook"
                           ? post.facebookStatus
                           : platform === "instagram" ? post.instagramStatus
-                          : platform === "tiktok" ? post.tiktokStatus : post.youtubeStatus;
-                        const error = platform === "facebook"
-                          ? post.facebookError
-                          : platform === "instagram" ? post.instagramError
-                          : platform === "tiktok" ? post.tiktokError : post.youtubeError;
-                        return (
-                          <p key={platform} className="text-[10px] leading-5 text-[#777f77]">
-                            <span className="font-semibold">{platform === "facebook" ? "Facebook" : platform === "instagram" ? "Instagram" : platform === "tiktok" ? "TikTok" : "YouTube"}:</span>{" "}
-                            {status ? status === "UNKNOWN" ? "تحققي من الحساب قبل إعادة المحاولة" : STATUS_LABELS[status] : "لم يبدأ النشر"}
+                        : platform === "tiktok" ? post.tiktokStatus
+                        : platform === "youtube" ? post.youtubeStatus : post.snapchatStatus;
+                      const error = platform === "facebook"
+                        ? post.facebookError
+                        : platform === "instagram" ? post.instagramError
+                        : platform === "tiktok" ? post.tiktokError
+                        : platform === "youtube" ? post.youtubeError : post.snapchatError;
+                      return (
+                        <p key={platform} className="text-[10px] leading-5 text-[#777f77]">
+                          <span className="font-semibold">{platform === "facebook" ? "Facebook" : platform === "instagram" ? "Instagram" : platform === "tiktok" ? "TikTok" : platform === "youtube" ? "YouTube" : "Snapchat"}:</span>{" "}
+                          {status ? status === "UNKNOWN" ? "تحققي من الحساب قبل إعادة المحاولة" : STATUS_LABELS[status] : "لم يبدأ النشر"}
+                          {platform === "snapchat" ? ` · ${post.snapchatContentType === "SPOTLIGHT" ? "Spotlight" : "Story"}` : null}
                             {platform === "youtube" && post.youtubeVideoUrl ? (
                               <> · <a href={post.youtubeVideoUrl} target="_blank" rel="noreferrer" className="font-semibold text-[#286355] underline">مشاهدة الفيديو</a></>
                             ) : null}
@@ -304,7 +307,7 @@ function HistorySection({ posts, databaseAvailable, searchTerm, onDelete, onRetr
                           </p>
                         );
                       })}
-                      {post.platforms.some((platform) => platform !== "facebook" && platform !== "instagram" && platform !== "tiktok" && platform !== "youtube") ? (
+                      {post.platforms.some((platform) => platform !== "facebook" && platform !== "instagram" && platform !== "tiktok" && platform !== "youtube" && platform !== "snapchat") ? (
                         <p className="text-[10px] text-[#a07035]">بقية المنصات غير مفعّلة للنشر التلقائي بعد.</p>
                       ) : null}
                     </div>
@@ -312,7 +315,7 @@ function HistorySection({ posts, databaseAvailable, searchTerm, onDelete, onRetr
                 </div>
                 <div className="col-span-2 flex items-center justify-between gap-3 pr-[68px] sm:col-span-1 sm:justify-end sm:pr-0">
                   <StatusPill status={post.status} />
-                  {post.platforms.some((platform) => (platform === "facebook" && (post.facebookStatus === "FAILED" || post.facebookStatus === "PENDING")) || (platform === "instagram" && (post.instagramStatus === "FAILED" || post.instagramStatus === "PENDING")) || (platform === "tiktok" && (post.tiktokStatus === "FAILED" || post.tiktokStatus === "PENDING")) || (platform === "youtube" && (post.youtubeStatus === "FAILED" || post.youtubeStatus === "PENDING"))) ? (
+                  {post.platforms.some((platform) => (platform === "facebook" && (post.facebookStatus === "FAILED" || post.facebookStatus === "PENDING")) || (platform === "instagram" && (post.instagramStatus === "FAILED" || post.instagramStatus === "PENDING")) || (platform === "tiktok" && (post.tiktokStatus === "FAILED" || post.tiktokStatus === "PENDING")) || (platform === "youtube" && (post.youtubeStatus === "FAILED" || post.youtubeStatus === "PENDING")) || (platform === "snapchat" && (post.snapchatStatus === "FAILED" || post.snapchatStatus === "PENDING"))) ? (
                     <button
                       type="button"
                       onClick={() => onRetryPublish(post)}
@@ -353,6 +356,12 @@ export default function DashboardClient({ initialPosts, initialStats, databaseAv
   const [youtubeTags, setYoutubeTags] = useState(DEFAULT_YOUTUBE_TAGS);
   const [youtubePrivacyStatus, setYoutubePrivacyStatus] = useState<"public" | "unlisted">("unlisted");
   const [tiktokConnected, setTiktokConnected] = useState(false);
+  const [snapchatConnected, setSnapchatConnected] = useState(false);
+  const [snapchatProfileId, setSnapchatProfileId] = useState("");
+  const [snapchatContentType, setSnapchatContentType] = useState<"STORY" | "SPOTLIGHT">("STORY");
+  const [snapchatStoryTtl, setSnapchatStoryTtl] = useState<"ONE_DAY" | "TWO_DAYS" | "THREE_DAYS" | "ONE_WEEK">("ONE_DAY");
+  const [snapchatDescription, setSnapchatDescription] = useState("");
+  const [snapchatLink, setSnapchatLink] = useState("");
   const [tiktokPrivacyOptions, setTiktokPrivacyOptions] = useState<TikTokPrivacyLevel[]>([]);
   const [tiktokPrivacyLevel, setTiktokPrivacyLevel] = useState<TikTokPrivacyLevel>("PUBLIC_TO_EVERYONE");
   const [tiktokCanPost, setTiktokCanPost] = useState(false);
@@ -361,6 +370,7 @@ export default function DashboardClient({ initialPosts, initialStats, databaseAv
   const [tiktokInfoError, setTiktokInfoError] = useState("");
   const [tiktokConsent, setTiktokConsent] = useState(false);
   const [videoDuration, setVideoDuration] = useState<number | null>(null);
+  const [videoDimensions, setVideoDimensions] = useState<{ width: number; height: number } | null>(null);
   const [selectedPlatforms, setSelectedPlatforms] = useState<string[]>(["instagram"]);
   const [isDragging, setIsDragging] = useState(false);
   const [isSaving, setIsSaving] = useState(false);
@@ -519,6 +529,12 @@ export default function DashboardClient({ initialPosts, initialStats, databaseAv
         if (value && typeof value === "object" && "tiktokConnected" in value) {
           setTiktokConnected(value.tiktokConnected === true);
         }
+        if (value && typeof value === "object") {
+          setSnapchatConnected("snapchatConnected" in value && value.snapchatConnected === true);
+          setSnapchatProfileId("snapchatProfileId" in value && typeof value.snapchatProfileId === "string"
+            ? value.snapchatProfileId
+            : "");
+        }
       })
       .catch(() => {
         // Keep the default brand name when the settings API is unavailable.
@@ -617,6 +633,7 @@ export default function DashboardClient({ initialPosts, initialStats, databaseAv
     setPreviewUrl("");
     setSelectedFile(null);
     setVideoDuration(null);
+    setVideoDimensions(null);
     if (inputRef.current) inputRef.current.value = "";
   }
 
@@ -629,12 +646,12 @@ export default function DashboardClient({ initialPosts, initialStats, databaseAv
       return;
     }
     const maxSize = file.type.startsWith("video/") &&
-      selectedPlatforms.some((platform) => platform === "youtube" || platform === "tiktok")
+      selectedPlatforms.some((platform) => platform === "youtube" || platform === "tiktok" || platform === "snapchat")
       ? 100 * 1024 * 1024
       : 10 * 1024 * 1024;
     if (file.size > maxSize) {
       setError(maxSize > 10 * 1024 * 1024
-        ? "الحد الأقصى لحجم فيديو YouTube أو TikTok هو 100 ميجابايت."
+        ? "الحد الأقصى لحجم فيديو YouTube أو TikTok أو Snapchat هو 100 ميجابايت."
         : "الحد الأقصى لحجم الملف هو 10 ميجابايت.");
       return;
     }
@@ -643,6 +660,7 @@ export default function DashboardClient({ initialPosts, initialStats, databaseAv
     setPreviewUrl(objectUrlRef.current);
     setSelectedFile(file);
     setVideoDuration(null);
+    setVideoDimensions(null);
   }
 
   function togglePlatform(platform: string) {
@@ -727,6 +745,56 @@ export default function DashboardClient({ initialPosts, initialStats, databaseAv
         return;
       }
     }
+    if (selectedPlatforms.includes("snapchat")) {
+      if (!snapchatConnected) {
+        setError("اربطي حساب Snapchat من الإعدادات قبل النشر.");
+        return;
+      }
+      if (!snapchatProfileId) {
+        setError("أضيفي معرّف Snapchat Public Profile في الإعدادات قبل النشر.");
+        return;
+      }
+      if (snapchatContentType === "SPOTLIGHT" && selectedFile.type !== "video/mp4") {
+        setError("نشر Snapchat Spotlight يتطلب فيديو بصيغة MP4.");
+        return;
+      }
+      if (selectedFile.type.startsWith("video/")) {
+        if (selectedFile.type !== "video/mp4") {
+          setError("نشر فيديو Snapchat يتطلب ملف MP4.");
+          return;
+        }
+        const minimumDuration = snapchatContentType === "SPOTLIGHT" ? 6 : 5;
+        if (videoDuration === null || !videoDimensions) {
+          setError("انتظري حتى يكتمل التحقق من مدة وأبعاد الفيديو.");
+          return;
+        }
+        if (videoDuration < minimumDuration || videoDuration > 60) {
+          setError(`مدة فيديو Snapchat يجب أن تكون من ${minimumDuration} إلى 60 ثانية.`);
+          return;
+        }
+        if (videoDimensions.width < 540 || videoDimensions.height < 960) {
+          setError("دقة فيديو Snapchat يجب ألا تقل عن 540×960 بكسل.");
+          return;
+        }
+      } else if (!["image/jpeg", "image/png"].includes(selectedFile.type)) {
+        setError("قصص Snapchat تدعم صور JPG أو PNG في لوحة التحكم.");
+        return;
+      }
+      if (snapchatContentType === "SPOTLIGHT" &&
+        (!snapchatDescription.trim() || snapchatDescription.trim().length > 160)) {
+        setError("وصف Spotlight مطلوب ويجب ألا يتجاوز 160 حرفاً.");
+        return;
+      }
+      if (snapchatLink.trim()) {
+        try {
+          const link = new URL(snapchatLink.trim());
+          if (link.protocol !== "https:" && link.protocol !== "http:") throw new Error();
+        } catch {
+          setError("رابط Snapchat يجب أن يكون رابط HTTP أو HTTPS صالحاً.");
+          return;
+        }
+      }
+    }
 
     setIsSaving(true);
     try {
@@ -778,6 +846,14 @@ export default function DashboardClient({ initialPosts, initialStats, databaseAv
               youtubePrivacyStatus,
             }
           : {}),
+        ...(selectedPlatforms.includes("snapchat")
+          ? {
+              snapchatContentType,
+              snapchatStoryTtl,
+              snapchatDescription: snapchatDescription.trim(),
+              snapchatLink: snapchatLink.trim(),
+            }
+          : {}),
       });
 
       if (!result.success) {
@@ -789,7 +865,7 @@ export default function DashboardClient({ initialPosts, initialStats, databaseAv
       }
 
       let savedPost = result.post;
-      if (selectedPlatforms.some((platform) => platform === "facebook" || platform === "instagram" || platform === "tiktok" || platform === "youtube")) {
+      if (selectedPlatforms.some((platform) => platform === "facebook" || platform === "instagram" || platform === "tiktok" || platform === "youtube" || platform === "snapchat")) {
         try {
           const publishResponse = await fetch(`/api/posts/${encodeURIComponent(savedPost.id)}/publish`, {
             method: "POST",
@@ -928,7 +1004,7 @@ export default function DashboardClient({ initialPosts, initialStats, databaseAv
                   <div>
                     <div className="mb-3 flex items-center justify-between">
                       <label htmlFor="media-file" className="text-sm font-bold text-[#3b463f]">الوسائط</label>
-                      <span className="text-[11px] text-[#9b9d95]">صورة أو فيديو · حتى 100 MB لفيديو YouTube أو TikTok</span>
+                      <span className="text-[11px] text-[#9b9d95]">صورة أو فيديو · حتى 100 MB لفيديو YouTube أو TikTok أو Snapchat</span>
                     </div>
                     <input
                       ref={inputRef}
@@ -946,7 +1022,13 @@ export default function DashboardClient({ initialPosts, initialStats, databaseAv
                               src={previewUrl}
                               className="size-full object-contain"
                               controls
-                              onLoadedMetadata={(event) => setVideoDuration(event.currentTarget.duration)}
+                              onLoadedMetadata={(event) => {
+                                setVideoDuration(event.currentTarget.duration);
+                                setVideoDimensions({
+                                  width: event.currentTarget.videoWidth,
+                                  height: event.currentTarget.videoHeight,
+                                });
+                              }}
                             />
                           ) : (
                             <Image src={previewUrl} alt="معاينة الوسائط المختارة" fill sizes="(max-width: 768px) 100vw, 720px" className="object-contain" unoptimized />
@@ -1091,6 +1173,65 @@ export default function DashboardClient({ initialPosts, initialStats, databaseAv
                     </div>
                   ) : null}
 
+                  {selectedPlatforms.includes("snapchat") ? (
+                    <div className="space-y-4 rounded-2xl border border-[#e8e6c7] bg-[#fffef2] p-4 sm:p-5">
+                      <div>
+                        <h3 className="text-sm font-bold text-[#3b463f]">تفاصيل النشر على Snapchat</h3>
+                        <p className="mt-1 text-[11px] leading-5 text-[#858a82]">
+                          {snapchatContentType === "STORY"
+                            ? "Story يقبل صورة JPG/PNG أو فيديو MP4 من 5 إلى 60 ثانية. نص المنشور لا يُضاف تلقائياً كطبقة على الوسائط."
+                            : "Spotlight يقبل فيديو MP4 من 6 إلى 60 ثانية، ودقة لا تقل عن 540×960."}
+                        </p>
+                      </div>
+                      <div className="grid gap-4 sm:grid-cols-2">
+                        <div>
+                          <label htmlFor="snapchat-content-type" className="mb-2 block text-xs font-semibold text-[#536057]">نوع المحتوى</label>
+                          <select id="snapchat-content-type" value={snapchatContentType}
+                            onChange={(event) => setSnapchatContentType(event.target.value === "SPOTLIGHT" ? "SPOTLIGHT" : "STORY")}
+                            className="w-full rounded-xl border border-[#e9e8e1] bg-white px-3.5 py-3 text-sm outline-none focus:border-[#a3bba7]">
+                            <option value="STORY">Story</option>
+                            <option value="SPOTLIGHT">Spotlight</option>
+                          </select>
+                        </div>
+                        {snapchatContentType === "STORY" ? (
+                          <div>
+                            <label htmlFor="snapchat-story-ttl" className="mb-2 block text-xs font-semibold text-[#536057]">مدة ظهور Story</label>
+                            <select id="snapchat-story-ttl" value={snapchatStoryTtl}
+                              onChange={(event) => setSnapchatStoryTtl(
+                                event.target.value === "TWO_DAYS" || event.target.value === "THREE_DAYS" || event.target.value === "ONE_WEEK"
+                                  ? event.target.value
+                                  : "ONE_DAY",
+                              )}
+                              className="w-full rounded-xl border border-[#e9e8e1] bg-white px-3.5 py-3 text-sm outline-none focus:border-[#a3bba7]">
+                              <option value="ONE_DAY">يوم واحد</option>
+                              <option value="TWO_DAYS">يومان</option>
+                              <option value="THREE_DAYS">ثلاثة أيام</option>
+                              <option value="ONE_WEEK">أسبوع</option>
+                            </select>
+                          </div>
+                        ) : null}
+                      </div>
+                      {snapchatContentType === "SPOTLIGHT" ? (
+                        <div>
+                          <label htmlFor="snapchat-description" className="mb-2 block text-xs font-semibold text-[#536057]">وصف Spotlight</label>
+                          <textarea id="snapchat-description" value={snapchatDescription}
+                            onChange={(event) => setSnapchatDescription(event.target.value.slice(0, 160))}
+                            maxLength={160} rows={2} required
+                            className="w-full resize-y rounded-xl border border-[#e9e8e1] bg-white px-3.5 py-3 text-sm leading-6 outline-none focus:border-[#a3bba7]"
+                            placeholder="وصف قصير للفيديو" />
+                          <p className="mt-1 text-left text-[10px] text-[#a0a199]">{snapchatDescription.length} / 160</p>
+                        </div>
+                      ) : null}
+                      <div>
+                        <label htmlFor="snapchat-link" className="mb-2 block text-xs font-semibold text-[#536057]">رابط اختياري</label>
+                        <input id="snapchat-link" type="url" value={snapchatLink}
+                          onChange={(event) => setSnapchatLink(event.target.value)}
+                          className="w-full rounded-xl border border-[#e9e8e1] bg-white px-3.5 py-3 text-sm outline-none focus:border-[#a3bba7]"
+                          placeholder="https://example.com" />
+                      </div>
+                    </div>
+                  ) : null}
+
                   <div id="platforms">
                     <div className="mb-3 flex items-center justify-between gap-3">
                       <span className="text-sm font-bold text-[#3b463f]">اختاري منصات النشر</span>
@@ -1105,13 +1246,14 @@ export default function DashboardClient({ initialPosts, initialStats, databaseAv
                             type="button"
                             aria-pressed={selected}
                             onClick={() => togglePlatform(platform.id)}
-                            disabled={platform.id === "tiktok" && !tiktokConnected}
+                            disabled={(platform.id === "tiktok" && !tiktokConnected) ||
+                              (platform.id === "snapchat" && (!snapchatConnected || !snapchatProfileId))}
                             className={`flex items-center gap-2.5 rounded-xl border p-3 text-right transition ${selected ? "border-[#a9c1ac] bg-[#f2f7f1] ring-1 ring-[#e5eee4]" : "border-[#eeece6] bg-white hover:border-[#d9ded5] hover:bg-[#fbfbf8]"} disabled:cursor-not-allowed disabled:opacity-55`}
                           >
                             <PlatformMark platform={platform} />
                             <span className="min-w-0 flex-1">
                               <span className="block text-xs font-bold text-[#455047]">{platform.name}</span>
-                              <span className="mt-1 block truncate text-[10px] text-[#9a9c94]">{platform.id === "tiktok" && !tiktokConnected ? "اربطِي الحساب من الإعدادات أولاً" : platform.subtitle}</span>
+                              <span className="mt-1 block truncate text-[10px] text-[#9a9c94]">{platform.id === "tiktok" && !tiktokConnected ? "اربطِي الحساب من الإعدادات أولاً" : platform.id === "snapchat" && !snapchatConnected ? "اربطي الحساب من الإعدادات أولاً" : platform.id === "snapchat" && !snapchatProfileId ? "أضيفي Public Profile ID في الإعدادات" : platform.subtitle}</span>
                             </span>
                             <span className={`grid size-[18px] shrink-0 place-items-center rounded-md border ${selected ? "border-[#3f806d] bg-[#3f806d] text-white" : "border-[#d9dcd4] bg-white text-transparent"}`}>
                               <Check size={12} strokeWidth={3} />

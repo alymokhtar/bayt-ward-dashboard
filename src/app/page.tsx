@@ -28,6 +28,16 @@ export default async function Home() {
           instagramStatus: true,
           tiktokStatus: true,
           youtubeStatus: true,
+          snapchatStatus: true,
+          snapchatContentType: true,
+          snapchatStoryTtl: true,
+          snapchatDescription: true,
+          snapchatLink: true,
+          snapchatMediaId: true,
+          snapchatRequestId: true,
+          snapchatStoryId: true,
+          snapchatSpotlightId: true,
+          snapchatError: true,
           youtubeTitle: true,
           youtubeDescription: true,
           youtubeTags: true,
@@ -60,6 +70,11 @@ export default async function Home() {
         ? post.youtubeTags.filter((tag): tag is string => typeof tag === "string")
         : [],
       youtubePrivacyStatus: post.youtubePrivacyStatus === "public" ? "public" : "unlisted",
+      snapchatContentType: post.snapchatContentType === "SPOTLIGHT" ? "SPOTLIGHT" : "STORY",
+      snapchatStoryTtl: post.snapchatStoryTtl === "TWO_DAYS" ||
+        post.snapchatStoryTtl === "THREE_DAYS" || post.snapchatStoryTtl === "ONE_WEEK"
+        ? post.snapchatStoryTtl
+        : "ONE_DAY",
       tiktokPrivacyLevel: isTikTokPrivacyLevel(post.tiktokPrivacyLevel)
         ? post.tiktokPrivacyLevel
         : "PUBLIC_TO_EVERYONE",

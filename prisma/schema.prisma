@@ -17,58 +17,74 @@ enum PostStatus {
 }
 
 model Post {
-  id                 String      @id @default(uuid()) @db.Uuid
-  caption            String      @db.Text
-  mediaUrl           String      @db.Text
-  cloudinaryPublicId String      @db.Text
-  platforms          Json        @default("[]")
-  mediaType          String      @default("image") @db.VarChar(10)
-  status             PostStatus  @default(PENDING)
-  facebookStatus     PostStatus?
-  instagramStatus    PostStatus?
-  facebookPostId     String?     @db.Text
-  instagramPostId    String?     @db.Text
-  facebookError      String?     @db.Text
-  instagramError     String?     @db.Text
-  tiktokStatus       PostStatus?
-  tiktokPublishId    String?     @db.Text
-  tiktokVideoId      String?     @db.Text
-  tiktokVideoUrl     String?     @db.Text
-  tiktokError        String?     @db.Text
-  tiktokPrivacyLevel String      @default("PUBLIC_TO_EVERYONE") @db.VarChar(40)
-  youtubeStatus      PostStatus?
-  youtubeTitle       String      @default("") @db.Text
-  youtubeDescription String      @default("") @db.Text
-  youtubeTags        Json        @default("[]")
-  youtubePrivacyStatus String    @default("unlisted") @db.VarChar(10)
-  youtubeVideoId     String?     @db.Text
-  youtubeVideoUrl    String?     @db.Text
-  youtubeError       String?     @db.Text
-  createdAt          DateTime    @default(now())
+  id                   String      @id @default(uuid()) @db.Uuid
+  caption              String      @db.Text
+  mediaUrl             String      @db.Text
+  cloudinaryPublicId   String      @db.Text
+  platforms            Json        @default("[]")
+  mediaType            String      @default("image") @db.VarChar(10)
+  status               PostStatus  @default(PENDING)
+  facebookStatus       PostStatus?
+  instagramStatus      PostStatus?
+  facebookPostId       String?     @db.Text
+  instagramPostId      String?     @db.Text
+  facebookError        String?     @db.Text
+  instagramError       String?     @db.Text
+  tiktokStatus         PostStatus?
+  tiktokPublishId      String?     @db.Text
+  tiktokVideoId        String?     @db.Text
+  tiktokVideoUrl       String?     @db.Text
+  tiktokError          String?     @db.Text
+  tiktokPrivacyLevel   String      @default("PUBLIC_TO_EVERYONE") @db.VarChar(40)
+  youtubeStatus        PostStatus?
+  youtubeTitle         String      @default("") @db.Text
+  youtubeDescription   String      @default("") @db.Text
+  youtubeTags          Json        @default("[]")
+  youtubePrivacyStatus String      @default("unlisted") @db.VarChar(10)
+  youtubeVideoId       String?     @db.Text
+  youtubeVideoUrl      String?     @db.Text
+  youtubeError         String?     @db.Text
+  snapchatStatus       PostStatus?
+  snapchatContentType  String      @default("STORY") @db.VarChar(10)
+  snapchatStoryTtl     String      @default("ONE_DAY") @db.VarChar(20)
+  snapchatDescription  String      @default("") @db.Text
+  snapchatLink         String      @default("") @db.Text
+  snapchatMediaId      String?     @db.Text
+  snapchatRequestId    String?     @db.Text
+  snapchatStoryId      String?     @db.Text
+  snapchatSpotlightId  String?     @db.Text
+  snapchatError        String?     @db.Text
+  createdAt            DateTime    @default(now())
 }
 
 model Settings {
-  id                       String   @id @default("store")
-  storeName                String   @default("بيت ورد") @db.Text
-  defaultHashtags          String   @default("#بيت_ورد #تنسيق_زهور") @db.Text
-  facebookPageId           String   @default("1398573690014828") @db.Text
-  instagramAccountId       String   @default("") @db.Text
-  tiktokAccountId          String   @default("") @db.Text
-  tiktokOpenId             String   @default("") @db.Text
-  tiktokDisplayName         String   @default("") @db.Text
-  tiktokAccessToken         String   @default("") @db.Text
-  tiktokRefreshToken        String   @default("") @db.Text
-  tiktokTokenExpiresAt      DateTime?
+  id                          String    @id @default("store")
+  storeName                   String    @default("بيت ورد") @db.Text
+  defaultHashtags             String    @default("#بيت_ورد #تنسيق_زهور") @db.Text
+  facebookPageId              String    @default("1398573690014828") @db.Text
+  instagramAccountId          String    @default("") @db.Text
+  tiktokAccountId             String    @default("") @db.Text
+  tiktokOpenId                String    @default("") @db.Text
+  tiktokDisplayName           String    @default("") @db.Text
+  tiktokAccessToken           String    @default("") @db.Text
+  tiktokRefreshToken          String    @default("") @db.Text
+  tiktokTokenExpiresAt        DateTime?
   tiktokRefreshTokenExpiresAt DateTime?
-  youtubeChannelId         String   @default("") @db.Text
-  youtubeChannelTitle      String   @default("") @db.Text
-  youtubeAccessToken       String   @default("") @db.Text
-  youtubeRefreshToken      String   @default("") @db.Text
-  youtubeTokenExpiresAt    DateTime?
-  snapchatClientId         String   @default("") @db.Text
-  snapchatToken            String   @default("") @db.Text
-  metaAccessTokenEncrypted String   @default("") @db.Text
-  updatedAt                DateTime @updatedAt
+  youtubeChannelId            String    @default("") @db.Text
+  youtubeChannelTitle         String    @default("") @db.Text
+  youtubeAccessToken          String    @default("") @db.Text
+  youtubeRefreshToken         String    @default("") @db.Text
+  youtubeTokenExpiresAt       DateTime?
+  snapchatClientId            String    @default("") @db.Text
+  snapchatToken               String    @default("") @db.Text
+  snapchatOrganizationId      String    @default("") @db.Text
+  snapchatProfileId           String    @default("") @db.Text
+  snapchatProfileName         String    @default("") @db.Text
+  snapchatAccessToken         String    @default("") @db.Text
+  snapchatRefreshToken        String    @default("") @db.Text
+  snapchatTokenExpiresAt      DateTime?
+  metaAccessTokenEncrypted    String    @default("") @db.Text
+  updatedAt                   DateTime  @updatedAt
 }
 
 model AdminLoginAttempt {

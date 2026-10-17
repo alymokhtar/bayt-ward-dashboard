@@ -37,14 +37,15 @@ export async function uploadMedia(formData: FormData): Promise<UploadMediaResult
 
   const platforms = formData.getAll("platforms");
   const isLargeVideo = platforms.some((platform) =>
-    (platform === "youtube" || platform === "tiktok") && file.type.startsWith("video/"),
+    (platform === "youtube" || platform === "tiktok" || platform === "snapchat") &&
+      file.type.startsWith("video/"),
   );
   const maxFileSize = isLargeVideo ? MAX_VIDEO_SIZE : MAX_IMAGE_SIZE;
   if (file.size > maxFileSize) {
     return {
       success: false,
       error: isLargeVideo
-        ? "الحد الأقصى لحجم فيديو YouTube أو TikTok هو 100 ميجابايت."
+        ? "الحد الأقصى لحجم فيديو YouTube أو TikTok أو Snapchat هو 100 ميجابايت."
         : "الحد الأقصى لحجم الملف هو 10 ميجابايت.",
     };
   }

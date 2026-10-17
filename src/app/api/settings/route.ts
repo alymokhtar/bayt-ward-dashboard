@@ -32,8 +32,9 @@ export async function GET() {
         youtubeChannelId: true,
         youtubeChannelTitle: true,
         youtubeRefreshToken: true,
-        snapchatClientId: true,
-        snapchatToken: true,
+        snapchatProfileId: true,
+        snapchatProfileName: true,
+        snapchatRefreshToken: true,
         metaAccessTokenEncrypted: true,
         updatedAt: true,
       },
@@ -42,7 +43,7 @@ export async function GET() {
     const {
       youtubeRefreshToken,
       tiktokRefreshToken,
-      snapchatToken,
+      snapchatRefreshToken,
       metaAccessTokenEncrypted,
       ...publicSettings
     } = settings;
@@ -51,7 +52,9 @@ export async function GET() {
       facebookPageId: settings.facebookPageId || FACEBOOK_PAGE_ID,
       youtubeConnected: Boolean(youtubeRefreshToken),
       tiktokConnected: Boolean(tiktokRefreshToken),
-      snapchatTokenConfigured: Boolean(snapchatToken),
+      snapchatConnected: Boolean(snapchatRefreshToken),
+      snapchatProfileId: settings.snapchatProfileId || process.env.SNAPCHAT_PUBLIC_PROFILE_ID || "",
+      snapchatProfileName: settings.snapchatProfileName,
       metaAccessTokenConfigured: Boolean(metaAccessTokenEncrypted),
     }, {
       headers: { "Cache-Control": "no-store" },
@@ -92,7 +95,6 @@ export async function PUT(request: Request) {
     "defaultHashtags",
     "facebookPageId",
     "instagramAccountId",
-    "snapchatClientId",
   ] as const;
 
   for (const field of fields) {
@@ -106,17 +108,16 @@ export async function PUT(request: Request) {
     defaultHashtags: (values.defaultHashtags as string).trim(),
     facebookPageId: (values.facebookPageId as string).trim(),
     instagramAccountId: (values.instagramAccountId as string).trim(),
-    snapchatClientId: (values.snapchatClientId as string).trim(),
+    snapchatProfileId: typeof values.snapchatProfileId === "string"
+      ? values.snapchatProfileId.trim()
+      : "",
   };
-  const snapchatToken = values.snapchatToken;
   const metaAccessToken = values.metaAccessToken;
   if (
-    (snapchatToken !== undefined && typeof snapchatToken !== "string") ||
     (metaAccessToken !== undefined && typeof metaAccessToken !== "string")
   ) {
     return jsonError("رموز الوصول يجب أن تكون نصوصاً صالحة.", 400);
   }
-  const trimmedSnapchatToken = typeof snapchatToken === "string" ? snapchatToken.trim() : "";
   const trimmedMetaAccessToken = typeof metaAccessToken === "string" ? metaAccessToken.trim() : "";
 
   if (!data.storeName || data.storeName.length > 80) {
@@ -128,12 +129,12 @@ export async function PUT(request: Request) {
   if (
     data.facebookPageId.length > 255 ||
     data.instagramAccountId.length > 255 ||
-    data.snapchatClientId.length > 255
+    data.snapchatProfileId.length > 255
   ) {
     return jsonError("معرّف الحساب أطول من الحد المسموح.", 400);
   }
-  if (trimmedSnapchatToken.length > 10000) {
-    return jsonError("رمز الوصول أطول من الحد المسموح.", 400);
+  if (data.snapchatProfileId && !/^[0-9a-f-]{36}$/i.test(data.snapchatProfileId)) {
+    return jsonError("معرّف Snapchat Public Profile يجب أن يكون UUID صالحاً.", 400);
   }
   if (trimmedMetaAccessToken.length > 10000) {
     return jsonError("رمز وصول Meta أطول من الحد المسموح.", 400);
@@ -149,17 +150,23 @@ export async function PUT(request: Request) {
   }
 
   try {
+    const currentSettings = await prisma.settings.findUnique({
+      where: { id: SETTINGS_ID },
+      select: { snapchatProfileId: true },
+    });
     const settings = await prisma.settings.upsert({
       where: { id: SETTINGS_ID },
       create: {
         id: SETTINGS_ID,
         ...data,
-        ...(trimmedSnapchatToken ? { snapchatToken: trimmedSnapchatToken } : {}),
+        snapchatProfileName: "",
         ...(encryptedMetaAccessToken ? { metaAccessTokenEncrypted: encryptedMetaAccessToken } : {}),
       },
       update: {
         ...data,
-        ...(trimmedSnapchatToken ? { snapchatToken: trimmedSnapchatToken } : {}),
+        ...(currentSettings?.snapchatProfileId !== data.snapchatProfileId
+          ? { snapchatProfileName: "" }
+          : {}),
         ...(encryptedMetaAccessToken ? { metaAccessTokenEncrypted: encryptedMetaAccessToken } : {}),
       },
       select: {
@@ -172,8 +179,9 @@ export async function PUT(request: Request) {
         youtubeRefreshToken: true,
         tiktokDisplayName: true,
         tiktokRefreshToken: true,
-        snapchatClientId: true,
-        snapchatToken: true,
+        snapchatProfileId: true,
+        snapchatProfileName: true,
+        snapchatRefreshToken: true,
         metaAccessTokenEncrypted: true,
         updatedAt: true,
       },
@@ -182,7 +190,7 @@ export async function PUT(request: Request) {
     const {
       youtubeRefreshToken,
       tiktokRefreshToken,
-      snapchatToken,
+      snapchatRefreshToken,
       metaAccessTokenEncrypted,
       ...publicSettings
     } = settings;
@@ -190,7 +198,9 @@ export async function PUT(request: Request) {
       ...publicSettings,
       youtubeConnected: Boolean(youtubeRefreshToken),
       tiktokConnected: Boolean(tiktokRefreshToken),
-      snapchatTokenConfigured: Boolean(snapchatToken),
+      snapchatConnected: Boolean(snapchatRefreshToken),
+      snapchatProfileId: settings.snapchatProfileId || process.env.SNAPCHAT_PUBLIC_PROFILE_ID || "",
+      snapchatProfileName: settings.snapchatProfileName,
       metaAccessTokenConfigured: Boolean(metaAccessTokenEncrypted),
       metaAccessTokenUpdated: Boolean(encryptedMetaAccessToken),
     }, {

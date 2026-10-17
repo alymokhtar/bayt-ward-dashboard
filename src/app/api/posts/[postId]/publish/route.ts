@@ -5,6 +5,7 @@ import { decryptMetaToken } from "@/lib/meta-token";
 import { MetaGraphError, publishFacebookPost, publishInstagramPost } from "@/lib/meta-graph";
 import { downloadCloudinaryVideo, uploadYouTubeVideo, YouTubeUploadError } from "@/lib/youtube";
 import { TikTokPublishError, uploadTikTokVideo } from "@/lib/tiktok";
+import { publishSnapchatContent, SnapchatPublishError } from "@/lib/snapchat";
 import { prisma } from "@/lib/prisma";
 import { FACEBOOK_PAGE_ID } from "@/constants/socials";
 
@@ -12,7 +13,7 @@ export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
 export const maxDuration = 300;
 
-type Platform = "facebook" | "instagram" | "tiktok" | "youtube";
+type Platform = "facebook" | "instagram" | "tiktok" | "youtube" | "snapchat";
 
 function jsonError(message: string, status: number) {
   return NextResponse.json({ error: message }, { status, headers: { "Cache-Control": "no-store" } });
@@ -46,6 +47,16 @@ function toSavedPost(post: {
   instagramStatus: PostStatus | null;
   tiktokStatus: PostStatus | null;
   youtubeStatus: PostStatus | null;
+  snapchatStatus: PostStatus | null;
+  snapchatContentType: string;
+  snapchatStoryTtl: string;
+  snapchatDescription: string;
+  snapchatLink: string;
+  snapchatMediaId: string | null;
+  snapchatRequestId: string | null;
+  snapchatStoryId: string | null;
+  snapchatSpotlightId: string | null;
+  snapchatError: string | null;
   youtubeTitle: string;
   youtubeDescription: string;
   youtubeTags: unknown;
@@ -68,6 +79,8 @@ function toSavedPost(post: {
     platforms: Array.isArray(post.platforms)
       ? post.platforms.filter((platform): platform is string => typeof platform === "string")
       : [],
+    snapchatContentType: post.snapchatContentType === "SPOTLIGHT" ? "SPOTLIGHT" as const : "STORY" as const,
+    snapchatStoryTtl: post.snapchatStoryTtl,
     youtubeTags: Array.isArray(post.youtubeTags)
       ? post.youtubeTags.filter((tag): tag is string => typeof tag === "string")
       : [],
@@ -87,6 +100,7 @@ function currentStatus(post: {
   instagramStatus: PostStatus | null;
   tiktokStatus: PostStatus | null;
   youtubeStatus: PostStatus | null;
+  snapchatStatus: PostStatus | null;
 }) {
   const platforms = Array.isArray(post.platforms)
     ? post.platforms.filter((platform): platform is string => typeof platform === "string")
@@ -96,6 +110,7 @@ function currentStatus(post: {
     if (platform === "instagram") return post.instagramStatus ? [post.instagramStatus] : [];
     if (platform === "tiktok") return post.tiktokStatus ? [post.tiktokStatus] : [];
     if (platform === "youtube") return post.youtubeStatus ? [post.youtubeStatus] : [];
+    if (platform === "snapchat") return post.snapchatStatus ? [post.snapchatStatus] : [];
     return [];
   });
   if (statuses.includes(PostStatus.PUBLISHING)) return PostStatus.PUBLISHING;
@@ -103,7 +118,7 @@ function currentStatus(post: {
   if (statuses.includes(PostStatus.UNKNOWN)) return PostStatus.UNKNOWN;
   const hasUnsupportedPlatform = platforms.some(
     (platform) => platform !== "facebook" && platform !== "instagram" &&
-      platform !== "tiktok" && platform !== "youtube",
+      platform !== "tiktok" && platform !== "youtube" && platform !== "snapchat",
   );
   if (hasUnsupportedPlatform || statuses.length !== platforms.length) return PostStatus.PENDING;
   return PostStatus.PUBLISHED;
@@ -133,7 +148,7 @@ export async function POST(
   const targets = [...new Set(platforms.filter(
     (platform): platform is Platform =>
       platform === "facebook" || platform === "instagram" ||
-      platform === "tiktok" || platform === "youtube",
+      platform === "tiktok" || platform === "youtube" || platform === "snapchat",
   ))];
   if (targets.length === 0) {
     return jsonError("لا يحتوي المنشور على منصة مدعومة للنشر المباشر.", 400);
@@ -146,7 +161,8 @@ export async function POST(
     platform === "facebook"
       ? post.facebookStatus
       : platform === "instagram" ? post.instagramStatus
-      : platform === "tiktok" ? post.tiktokStatus : post.youtubeStatus,
+      : platform === "tiktok" ? post.tiktokStatus
+      : platform === "youtube" ? post.youtubeStatus : post.snapchatStatus,
   ));
   if (pendingTargets.length === 0) {
     return NextResponse.json({ post: toSavedPost(post) }, { headers: { "Cache-Control": "no-store" } });
@@ -195,6 +211,9 @@ export async function POST(
       ...(pendingTargets.includes("youtube")
         ? [{ youtubeStatus: { in: [PostStatus.PENDING, PostStatus.FAILED] } }, { youtubeStatus: null }]
         : []),
+      ...(pendingTargets.includes("snapchat")
+        ? [{ snapchatStatus: { in: [PostStatus.PENDING, PostStatus.FAILED] } }, { snapchatStatus: null }]
+        : []),
     ],
   };
   const claimData = {
@@ -210,6 +229,9 @@ export async function POST(
       : {}),
     ...(pendingTargets.includes("youtube")
       ? { youtubeStatus: PostStatus.PUBLISHING, youtubeError: null }
+      : {}),
+    ...(pendingTargets.includes("snapchat")
+      ? { snapchatStatus: PostStatus.PUBLISHING, snapchatError: null }
       : {}),
   };
 
@@ -288,6 +310,41 @@ export async function POST(
         return { platform, publishId: uploaded.publishId };
       }
 
+      if (platform === "snapchat") {
+        const uploaded = await publishSnapchatContent({
+          mediaUrl: post.mediaUrl,
+          mediaPublicId: post.cloudinaryPublicId,
+          mediaType: post.mediaType === "video" ? "video" : "image",
+          contentType: post.snapchatContentType === "SPOTLIGHT" ? "SPOTLIGHT" : "STORY",
+          description: post.snapchatDescription,
+          storyTtl: post.snapchatStoryTtl === "TWO_DAYS" ||
+            post.snapchatStoryTtl === "THREE_DAYS" || post.snapchatStoryTtl === "ONE_WEEK"
+            ? post.snapchatStoryTtl
+            : "ONE_DAY",
+          link: post.snapchatLink,
+        });
+        await prisma.post.update({
+          where: { id: post.id },
+          data: {
+            snapchatStatus: PostStatus.PUBLISHED,
+            snapchatMediaId: uploaded.mediaId,
+            snapchatRequestId: uploaded.requestId ?? null,
+            snapchatStoryId: null,
+            snapchatSpotlightId: uploaded.spotlightId,
+            snapchatError: null,
+          },
+        }).catch(() => {
+          throw new SnapchatPublishError(
+            "Snapchat accepted the content, but its result could not be saved. Check Snapchat before retrying.",
+            true,
+          );
+        });
+        return {
+          platform,
+          postId: uploaded.spotlightId ?? uploaded.requestId ?? uploaded.mediaId,
+        };
+      }
+
       if (metaConfigurationError) throw new Error(metaConfigurationError);
       publishedId = platform === "facebook"
         ? await publishFacebookPost(metaSettings, metaInput)
@@ -297,7 +354,9 @@ export async function POST(
         ? error instanceof YouTubeUploadError && error.outcomeUnknown
         : platform === "tiktok"
           ? error instanceof TikTokPublishError && error.outcomeUnknown
-          : error instanceof MetaGraphError && error.outcomeUnknown;
+          : platform === "snapchat"
+            ? error instanceof SnapchatPublishError && error.outcomeUnknown
+            : error instanceof MetaGraphError && error.outcomeUnknown;
       const upstreamFailure = platform === "facebook" || platform === "instagram"
         ? error instanceof MetaGraphError && error.upstreamFailure
         : unknown;
@@ -313,6 +372,11 @@ export async function POST(
                 ...(error instanceof TikTokPublishError && error.publishId
                   ? { tiktokPublishId: error.publishId }
                   : {}),
+              }
+          : platform === "snapchat"
+            ? {
+                snapchatStatus: unknown ? PostStatus.UNKNOWN : PostStatus.FAILED,
+                snapchatError: message,
               }
           : platform === "facebook"
             ? { facebookStatus: unknown ? PostStatus.UNKNOWN : PostStatus.FAILED, facebookError: message }
@@ -355,6 +419,7 @@ export async function POST(
     instagram: "Instagram",
     tiktok: "TikTok",
     youtube: "YouTube",
+    snapchat: "Snapchat",
   };
   const failureMessage = failedResults
     .map((result) => `${platformLabels[result.platform]}: ${result.error}`)
@@ -372,6 +437,7 @@ export async function POST(
             instagramStatus: true,
             tiktokStatus: true,
             youtubeStatus: true,
+            snapchatStatus: true,
           },
         })),
       },

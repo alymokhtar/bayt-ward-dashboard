@@ -62,3 +62,11 @@ export function encryptTikTokToken(token: string) {
 export function decryptTikTokToken(value: string) {
   return decryptToken(value);
 }
+
+export function encryptSnapchatToken(token: string) {
+  return encryptToken(token);
+}
+
+export function decryptSnapchatToken(value: string) {
+  return decryptToken(value);
+}

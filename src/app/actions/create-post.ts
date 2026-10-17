@@ -17,6 +17,10 @@ export type CreatePostInput = {
   youtubeDescription?: string;
   youtubeTags?: string[];
   youtubePrivacyStatus?: "public" | "unlisted";
+  snapchatContentType?: "STORY" | "SPOTLIGHT";
+  snapchatStoryTtl?: "ONE_DAY" | "TWO_DAYS" | "THREE_DAYS" | "ONE_WEEK";
+  snapchatDescription?: string;
+  snapchatLink?: string;
 };
 
 export type SavedPost = {
@@ -31,6 +35,16 @@ export type SavedPost = {
   instagramStatus: "PENDING" | "PUBLISHING" | "PUBLISHED" | "FAILED" | "UNKNOWN" | null;
   tiktokStatus: "PENDING" | "PUBLISHING" | "PUBLISHED" | "FAILED" | "UNKNOWN" | null;
   youtubeStatus: "PENDING" | "PUBLISHING" | "PUBLISHED" | "FAILED" | "UNKNOWN" | null;
+  snapchatStatus: "PENDING" | "PUBLISHING" | "PUBLISHED" | "FAILED" | "UNKNOWN" | null;
+  snapchatContentType: "STORY" | "SPOTLIGHT";
+  snapchatStoryTtl: "ONE_DAY" | "TWO_DAYS" | "THREE_DAYS" | "ONE_WEEK";
+  snapchatDescription: string;
+  snapchatLink: string;
+  snapchatMediaId: string | null;
+  snapchatRequestId: string | null;
+  snapchatStoryId: string | null;
+  snapchatSpotlightId: string | null;
+  snapchatError: string | null;
   youtubeTitle: string;
   youtubeDescription: string;
   youtubeTags: string[];
@@ -75,6 +89,16 @@ export async function createPost(input: CreatePostInput): Promise<CreatePostResu
   const youtubePrivacyValid = input?.youtubePrivacyStatus === undefined ||
     input.youtubePrivacyStatus === "public" || input.youtubePrivacyStatus === "unlisted";
   const youtubePrivacyStatus = input?.youtubePrivacyStatus === "public" ? "public" : "unlisted";
+  const snapchatContentType = input?.snapchatContentType === "SPOTLIGHT" ? "SPOTLIGHT" : "STORY";
+  const requestedSnapchatStoryTtl = input?.snapchatStoryTtl;
+  const snapchatStoryTtl = requestedSnapchatStoryTtl === "TWO_DAYS" ||
+    requestedSnapchatStoryTtl === "THREE_DAYS" || requestedSnapchatStoryTtl === "ONE_WEEK"
+    ? requestedSnapchatStoryTtl
+    : "ONE_DAY";
+  const snapchatDescription = typeof input?.snapchatDescription === "string"
+    ? input.snapchatDescription.trim()
+    : "";
+  const snapchatLink = typeof input?.snapchatLink === "string" ? input.snapchatLink.trim() : "";
   const requestedTikTokPrivacy = input?.tiktokPrivacyLevel ?? "PUBLIC_TO_EVERYONE";
   const tiktokPrivacyLevel = isTikTokPrivacyLevel(requestedTikTokPrivacy)
     ? requestedTikTokPrivacy
@@ -113,6 +137,25 @@ export async function createPost(input: CreatePostInput): Promise<CreatePostResu
   ) {
     return { success: false, error: "تحققي من فيديو YouTube وعنوانه ووصفه ووسومه." };
   }
+  if (platforms.includes("snapchat")) {
+    if (snapchatContentType === "SPOTLIGHT" && mediaType !== "video") {
+      return { success: false, error: "نشر Snapchat Spotlight يتطلب فيديو." };
+    }
+    if (snapchatContentType === "SPOTLIGHT" &&
+      (!snapchatDescription || snapchatDescription.length > 160)) {
+      return { success: false, error: "وصف Snapchat Spotlight يجب ألا يتجاوز 160 حرفاً." };
+    }
+    if (snapchatLink) {
+      try {
+        const url = new URL(snapchatLink);
+        if ((url.protocol !== "https:" && url.protocol !== "http:") || snapchatLink.length > 2048) {
+          return { success: false, error: "رابط Snapchat يجب أن يكون رابط HTTP أو HTTPS صالحاً." };
+        }
+      } catch {
+        return { success: false, error: "رابط Snapchat يجب أن يكون رابط HTTP أو HTTPS صالحاً." };
+      }
+    }
+  }
 
   try {
     const post = await prisma.post.create({
@@ -139,6 +182,15 @@ export async function createPost(input: CreatePostInput): Promise<CreatePostResu
               youtubePrivacyStatus,
             }
           : {}),
+        ...(platforms.includes("snapchat")
+          ? {
+              snapchatStatus: "PENDING" as const,
+              snapchatContentType,
+              snapchatStoryTtl,
+              snapchatDescription,
+              snapchatLink,
+            }
+          : {}),
       },
     });
 
@@ -156,6 +208,16 @@ export async function createPost(input: CreatePostInput): Promise<CreatePostResu
         instagramStatus: post.instagramStatus,
         tiktokStatus: post.tiktokStatus,
         youtubeStatus: post.youtubeStatus,
+        snapchatStatus: post.snapchatStatus,
+        snapchatContentType: post.snapchatContentType === "SPOTLIGHT" ? "SPOTLIGHT" : "STORY",
+        snapchatStoryTtl: post.snapchatStoryTtl as "ONE_DAY" | "TWO_DAYS" | "THREE_DAYS" | "ONE_WEEK",
+        snapchatDescription: post.snapchatDescription,
+        snapchatLink: post.snapchatLink,
+        snapchatMediaId: post.snapchatMediaId,
+        snapchatRequestId: post.snapchatRequestId,
+        snapchatStoryId: post.snapchatStoryId,
+        snapchatSpotlightId: post.snapchatSpotlightId,
+        snapchatError: post.snapchatError,
         youtubeTitle: post.youtubeTitle,
         youtubeDescription: post.youtubeDescription,
         youtubeTags,

@@ -40,7 +40,7 @@ type SavedSettings = {
   facebookPageId: string;
   instagramAccountId: string;
   youtubeChannelId: string;
-  snapchatClientId: string;
+  snapchatProfileId: string;
 };
 
 type SettingsResponse = Partial<SavedSettings> & {
@@ -48,7 +48,8 @@ type SettingsResponse = Partial<SavedSettings> & {
   youtubeConnected?: boolean;
   tiktokDisplayName?: string;
   tiktokConnected?: boolean;
-  snapchatTokenConfigured?: boolean;
+  snapchatConnected?: boolean;
+  snapchatProfileName?: string;
   metaAccessTokenConfigured?: boolean;
   metaAccessTokenUpdated?: boolean;
 };
@@ -59,7 +60,7 @@ const DEFAULT_SETTINGS: SavedSettings = {
   facebookPageId: FACEBOOK_PAGE_ID,
   instagramAccountId: "",
   youtubeChannelId: "",
-  snapchatClientId: "",
+  snapchatProfileId: "",
 };
 
 const SETTINGS_SECTIONS = [
@@ -77,15 +78,15 @@ export default function SettingsClient({ cloudinaryConfigured }: SettingsClientP
   const [metaAccessToken, setMetaAccessToken] = useState("");
   const [metaAccessTokenConfigured, setMetaAccessTokenConfigured] = useState(false);
   const [showAccessToken, setShowAccessToken] = useState(false);
-  const [snapchatToken, setSnapchatToken] = useState("");
   const [youtubeChannelTitle, setYoutubeChannelTitle] = useState("");
   const [youtubeConnected, setYoutubeConnected] = useState(false);
   const [tiktokDisplayName, setTiktokDisplayName] = useState("");
   const [tiktokConnected, setTiktokConnected] = useState(false);
-  const [snapchatTokenConfigured, setSnapchatTokenConfigured] = useState(false);
-  const [showSnapchatToken, setShowSnapchatToken] = useState(false);
+  const [snapchatConnected, setSnapchatConnected] = useState(false);
+  const [snapchatProfileName, setSnapchatProfileName] = useState("");
   const [isDisconnectingYoutube, setIsDisconnectingYoutube] = useState(false);
   const [isDisconnectingTiktok, setIsDisconnectingTiktok] = useState(false);
+  const [isDisconnectingSnapchat, setIsDisconnectingSnapchat] = useState(false);
   const [toast, setToast] = useState("");
   const [toastIsError, setToastIsError] = useState(false);
   const toastTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
@@ -109,13 +110,14 @@ export default function SettingsClient({ cloudinaryConfigured }: SettingsClientP
           facebookPageId: typeof values.facebookPageId === "string" ? values.facebookPageId : "",
           instagramAccountId: typeof values.instagramAccountId === "string" ? values.instagramAccountId : "",
           youtubeChannelId: typeof values.youtubeChannelId === "string" ? values.youtubeChannelId : "",
-          snapchatClientId: typeof values.snapchatClientId === "string" ? values.snapchatClientId : "",
+          snapchatProfileId: typeof values.snapchatProfileId === "string" ? values.snapchatProfileId : "",
         });
         setYoutubeConnected(values.youtubeConnected === true);
         setYoutubeChannelTitle(typeof values.youtubeChannelTitle === "string" ? values.youtubeChannelTitle : "");
         setTiktokConnected(values.tiktokConnected === true);
         setTiktokDisplayName(typeof values.tiktokDisplayName === "string" ? values.tiktokDisplayName : "");
-        setSnapchatTokenConfigured(values.snapchatTokenConfigured === true);
+        setSnapchatConnected(values.snapchatConnected === true);
+        setSnapchatProfileName(typeof values.snapchatProfileName === "string" ? values.snapchatProfileName : "");
         setMetaAccessTokenConfigured(values.metaAccessTokenConfigured === true);
       })
       .catch((error: unknown) => {
@@ -161,6 +163,21 @@ export default function SettingsClient({ cloudinaryConfigured }: SettingsClientP
       }, 0);
       window.history.replaceState({}, "", window.location.pathname);
     }
+    const snapchatResult = new URLSearchParams(window.location.search).get("snapchat");
+    if (snapchatResult) {
+      const messages: Record<string, string> = {
+        connected: "تم ربط Snapchat بنجاح.",
+        "connected-profile-required": "تم ربط Snapchat. أدخلي Public Profile ID في الإعدادات قبل النشر.",
+        denied: "تم إلغاء ربط Snapchat.",
+        "invalid-state": "تعذر التحقق من طلب ربط Snapchat. حاولي مجدداً.",
+        error: "تعذر ربط Snapchat. تحققي من صلاحيات التطبيق وallowlist لدى Snap.",
+      };
+      toastTimer.current = setTimeout(() => {
+        setToast(messages[snapchatResult] ?? messages.error);
+        setToastIsError(snapchatResult !== "connected" && snapchatResult !== "connected-profile-required");
+      }, 0);
+      window.history.replaceState({}, "", window.location.pathname);
+    }
 
     return () => {
       controller.abort();
@@ -182,7 +199,7 @@ export default function SettingsClient({ cloudinaryConfigured }: SettingsClientP
       const response = await fetch("/api/settings", {
         method: "PUT",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ ...settings, snapchatToken, metaAccessToken }),
+        body: JSON.stringify({ ...settings, metaAccessToken }),
       });
       const result: unknown = await response.json();
       if (!response.ok) {
@@ -199,15 +216,15 @@ export default function SettingsClient({ cloudinaryConfigured }: SettingsClientP
         facebookPageId: typeof values.facebookPageId === "string" ? values.facebookPageId : current.facebookPageId,
         instagramAccountId: typeof values.instagramAccountId === "string" ? values.instagramAccountId : current.instagramAccountId,
         youtubeChannelId: typeof values.youtubeChannelId === "string" ? values.youtubeChannelId : current.youtubeChannelId,
-        snapchatClientId: typeof values.snapchatClientId === "string" ? values.snapchatClientId : current.snapchatClientId,
+        snapchatProfileId: typeof values.snapchatProfileId === "string" ? values.snapchatProfileId : current.snapchatProfileId,
       }));
       setYoutubeConnected(values.youtubeConnected === true);
       setYoutubeChannelTitle(typeof values.youtubeChannelTitle === "string" ? values.youtubeChannelTitle : "");
       setTiktokConnected(values.tiktokConnected === true);
       setTiktokDisplayName(typeof values.tiktokDisplayName === "string" ? values.tiktokDisplayName : "");
-      setSnapchatTokenConfigured(values.snapchatTokenConfigured === true);
+      setSnapchatConnected(values.snapchatConnected === true);
+      setSnapchatProfileName(typeof values.snapchatProfileName === "string" ? values.snapchatProfileName : "");
       setMetaAccessTokenConfigured(values.metaAccessTokenConfigured === true);
-      setSnapchatToken("");
       setMetaAccessToken("");
       setToast(values.metaAccessTokenUpdated
         ? "تم تحديث رمز Meta وحفظه مشفّراً بنجاح."
@@ -222,6 +239,30 @@ export default function SettingsClient({ cloudinaryConfigured }: SettingsClientP
       toastTimer.current = setTimeout(() => setToast(""), 4500);
     } finally {
       setIsSaving(false);
+    }
+  }
+
+  async function disconnectSnapchat() {
+    if (isDisconnectingSnapchat) return;
+    setIsDisconnectingSnapchat(true);
+    try {
+      const response = await fetch("/api/auth/snapchat", { method: "DELETE" });
+      const result: unknown = await response.json();
+      if (!response.ok) {
+        const message = result && typeof result === "object" && "error" in result && typeof result.error === "string"
+          ? result.error
+          : "تعذّر فصل حساب Snapchat.";
+        throw new Error(message);
+      }
+      setSnapchatConnected(false);
+      setSnapchatProfileName("");
+      setToast("تم فصل حساب Snapchat.");
+      setToastIsError(false);
+    } catch (error) {
+      setToast(error instanceof Error ? error.message : "تعذّر فصل حساب Snapchat.");
+      setToastIsError(true);
+    } finally {
+      setIsDisconnectingSnapchat(false);
     }
   }
 
@@ -265,6 +306,7 @@ export default function SettingsClient({ cloudinaryConfigured }: SettingsClientP
           : "تعذّر فصل حساب TikTok.";
         throw new Error(message);
       }
+
       setTiktokConnected(false);
       setTiktokDisplayName("");
       setToast("تم فصل حساب TikTok.");
@@ -383,12 +425,12 @@ export default function SettingsClient({ cloudinaryConfigured }: SettingsClientP
                         <input id="instagram-account-id" value={settings.instagramAccountId} onChange={(event) => updateSetting("instagramAccountId", event.target.value)} className={`${inputClass} pr-10`} placeholder="معرّف الحساب التجاري" autoComplete="off" />
                       </div>
                     </Field>
-                    <Field label="Snapchat Client ID" htmlFor="snapchat-client-id" hint="معرّف تطبيق Snapchat">
+                    <Field label="Snapchat Public Profile ID" htmlFor="snapchat-profile-id" hint="UUID للملف العام الذي سينشر عليه Snapchat">
                       <div className="relative">
                         <span className="pointer-events-none absolute right-3.5 top-1/2 grid size-6 -translate-y-1/2 place-items-center rounded-md bg-[#fffc00] text-[#111]">
                           <SocialPlatformIcon platform="snapchat" size={17} />
                         </span>
-                        <input id="snapchat-client-id" value={settings.snapchatClientId} onChange={(event) => updateSetting("snapchatClientId", event.target.value)} className={`${inputClass} pr-12`} placeholder="معرّف التطبيق" autoComplete="off" />
+                        <input id="snapchat-profile-id" value={settings.snapchatProfileId} onChange={(event) => updateSetting("snapchatProfileId", event.target.value)} className={`${inputClass} pr-12`} placeholder="UUID الخاص بـ Public Profile" autoComplete="off" dir="ltr" />
                       </div>
                     </Field>
                   </div>
@@ -449,14 +491,37 @@ export default function SettingsClient({ cloudinaryConfigured }: SettingsClientP
                     </div>
                   </div>
 
-                  <div className="grid gap-5 sm:grid-cols-2">
-                    <Field label="Snapchat Access Token" htmlFor="snapchat-access-token" hint={snapchatTokenConfigured ? "رمز محفوظ — اتركيه فارغاً للاحتفاظ به" : "لم يُحفظ رمز بعد"}>
-                      <div className="relative">
-                        <LockKeyhole size={16} className="pointer-events-none absolute right-3.5 top-1/2 -translate-y-1/2 text-[#92978e]" />
-                        <input id="snapchat-access-token" type={showSnapchatToken ? "text" : "password"} value={snapchatToken} onChange={(event) => setSnapchatToken(event.target.value)} className={`${inputClass} px-11`} placeholder={snapchatTokenConfigured ? "أدخلي رمزاً جديداً للاستبدال" : "أدخلي رمز الوصول"} autoComplete="new-password" />
-                        <button type="button" onClick={() => setShowSnapchatToken((visible) => !visible)} className="absolute left-3 top-1/2 -translate-y-1/2 rounded-md p-1 text-[#8f948c] hover:bg-[#f4f3ef]" aria-label={showSnapchatToken ? "إخفاء رمز Snapchat" : "إظهار رمز Snapchat"}>{showSnapchatToken ? <EyeOff size={16} /> : <Eye size={16} />}</button>
+                  <div className="rounded-2xl border border-[#ece9e2] bg-[#fbfbf8] p-4 sm:p-5">
+                    <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
+                      <div className="flex items-center gap-3">
+                        <span className="grid size-11 place-items-center rounded-xl bg-[#fffc00] text-[#111]">
+                          <SocialPlatformIcon platform="snapchat" size={23} />
+                        </span>
+                        <div>
+                          <p className="text-sm font-bold text-[#3b463f]">ملف Snapchat العام</p>
+                          <p className="mt-1 text-xs text-[#858a82]">
+                            {snapchatConnected
+                              ? `متصل${snapchatProfileName ? `: ${snapchatProfileName}` : ""}`
+                              : "اربطِي حساب Business للنشر على Stories وSpotlight"}
+                          </p>
+                        </div>
                       </div>
-                    </Field>
+                      <div className="flex gap-2">
+                        <a href="/api/auth/snapchat" aria-disabled={!settingsLoaded}
+                          className={`inline-flex min-h-10 items-center justify-center rounded-xl px-4 text-xs font-bold text-white ${settingsLoaded ? "bg-[#205c4e] hover:bg-[#184d41]" : "pointer-events-none bg-[#aabbb1]"}`}>
+                          {snapchatConnected ? "إعادة ربط Snapchat" : "ربط Snapchat"}
+                        </a>
+                        {snapchatConnected ? (
+                          <button type="button" onClick={disconnectSnapchat} disabled={isDisconnectingSnapchat}
+                            className="min-h-10 rounded-xl border border-[#e5c9c4] px-4 text-xs font-bold text-[#a44f46] hover:bg-[#fff5f2] disabled:opacity-50">
+                            {isDisconnectingSnapchat ? "جارٍ الفصل..." : "فصل"}
+                          </button>
+                        ) : null}
+                      </div>
+                    </div>
+                    <p className="mt-3 text-[10px] leading-5 text-[#8a8e86]">
+                      يتم حفظ Access/Refresh Tokens مشفّرة على الخادم. يتطلب النشر إتاحة Public Profile API لتطبيقك من Snap وضبط معرّف Public Profile الصحيح.
+                    </p>
                   </div>
 
                   <Field label="Meta System User Access Token" htmlFor="meta-access-token" hint={metaAccessTokenConfigured ? "رمز محفوظ ومشفّر — اتركيه فارغاً للاحتفاظ به" : "يُشفّر على الخادم قبل التخزين"}>
