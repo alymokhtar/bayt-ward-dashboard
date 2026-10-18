@@ -7,6 +7,7 @@ export function proxy(request: NextRequest) {
     pathname === "/tiktokyCgHIZa4Dghuzi9C9PqQxr8mMjEH3Uo4.txt" ||
     pathname === "/api/auth/login" ||
     pathname === "/api/auth/logout" ||
+    pathname === "/api/auth/snapchat/callback" ||
     pathname === "/api/auth/youtube/callback" ||
     pathname === "/api/auth/tiktok/callback" ||
     request.headers.has("next-action")
