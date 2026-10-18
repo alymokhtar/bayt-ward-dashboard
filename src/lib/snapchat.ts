@@ -61,7 +61,6 @@ export function createSnapchatAuthorizationUrl(state: string) {
     response_type: "code",
     client_id: requiredEnv("SNAPCHAT_CLIENT_ID"),
     redirect_uri: getSnapchatRedirectUri(),
-    scope: "snapchat-marketing-api",
     state,
   }).toString();
   return url;

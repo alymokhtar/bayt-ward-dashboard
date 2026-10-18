@@ -25,7 +25,11 @@ export async function GET() {
       throw new Error("Snapchat OAuth environment variables are not fully configured.");
     }
     const state = randomBytes(32).toString("base64url");
-    const response = NextResponse.redirect(createSnapchatAuthorizationUrl(state));
+    const authorizationUrl = createSnapchatAuthorizationUrl(state);
+    const diagnosticUrl = new URL(authorizationUrl);
+    diagnosticUrl.searchParams.set("state", "[redacted]");
+    console.info("Snapchat Auth URL:", diagnosticUrl.toString());
+    const response = NextResponse.redirect(authorizationUrl);
     response.cookies.set(STATE_COOKIE, state, {
       httpOnly: true,
       secure: process.env.NODE_ENV === "production",
