@@ -5,6 +5,7 @@ import { prisma } from "@/lib/prisma";
 
 const SNAPCHAT_API = "https://businessapi.snapchat.com";
 const SNAPCHAT_AUTH = "https://accounts.snapchat.com/login/oauth2";
+const SNAPCHAT_AUTHORIZE_URL = "https://accounts.snapchat.com/login/oauth2/authorize";
 const SNAPCHAT_MAX_MEDIA_SIZE = 100 * 1024 * 1024;
 const SNAPCHAT_CHUNK_SIZE = 32 * 1024 * 1024;
 
@@ -56,11 +57,12 @@ export function getSnapchatRedirectUri() {
 }
 
 export function createSnapchatAuthorizationUrl(state: string) {
-  const url = new URL(`${SNAPCHAT_AUTH}/authorize`);
+  const url = new URL(SNAPCHAT_AUTHORIZE_URL);
   url.search = new URLSearchParams({
     response_type: "code",
     client_id: requiredEnv("SNAPCHAT_CLIENT_ID"),
     redirect_uri: getSnapchatRedirectUri(),
+    scope: "snapchat-marketing-api",
     state,
   }).toString();
   return url;
