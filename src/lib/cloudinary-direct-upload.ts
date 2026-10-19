@@ -1,7 +1,11 @@
 "use client";
 
 import { cleanupFailedUpload } from "@/app/actions/cleanup-upload";
-import { getMediaUploadPolicy, type SnapchatContentType } from "@/lib/platform-rules";
+import {
+  getMediaUploadPolicy,
+  MAX_DIRECT_VIDEO_UPLOAD_BYTES,
+  type SnapchatContentType,
+} from "@/lib/platform-rules";
 
 type SignatureResponse = {
   apiKey: string;
@@ -65,6 +69,31 @@ function responseErrorMessage(body: unknown, fallback: string) {
   return reasons.length > 0 ? `${error} ${reasons.join(" ")}` : error;
 }
 
+function translateCloudinaryError(message: string | undefined, status: number) {
+  const normalized = message?.trim().toLowerCase() ?? "";
+  if (/file size|file too large|request entity too large|maximum.*size|size.*limit/.test(normalized) ||
+    status === 413) {
+    return "حجم الملف يتجاوز الحد الذي يقبله Cloudinary. قلّلي حجمه ثم حاولي الرفع مجدداً.";
+  }
+  if (/invalid image|invalid video|unsupported.*format|file type.*not supported|invalid file/.test(normalized)) {
+    return "صيغة الملف أو محتواه غير مدعوم. اختاري صورة أو فيديو بصيغة مدعومة.";
+  }
+  if (/invalid signature|invalid api key|invalid cloud name|unauthorized|forbidden/.test(normalized) ||
+    status === 401 || status === 403) {
+    return "تعذّر التحقق من إعدادات الرفع السحابي. تحققي من إعدادات Cloudinary ثم حاولي مجدداً.";
+  }
+  if (/rate limit|too many requests/.test(normalized) || status === 429) {
+    return "طلبات الرفع كثيرة حالياً. انتظري قليلاً ثم حاولي مجدداً.";
+  }
+  if (/not found|does not exist/.test(normalized)) {
+    return "لم يتمكن Cloudinary من العثور على الملف المطلوب. أعيدي اختيار الملف وحاولي مجدداً.";
+  }
+  if (status >= 500) {
+    return "خدمة Cloudinary غير متاحة مؤقتاً. انتظري قليلاً ثم حاولي مجدداً.";
+  }
+  return "تعذّر رفع الملف إلى Cloudinary. تحققي من صيغة الملف والاتصال ثم حاولي مجدداً.";
+}
+
 function uploadChunk(
   chunk: Blob,
   signature: SignatureResponse,
@@ -103,11 +132,10 @@ function uploadChunk(
       }
 
       if (request.status < 200 || request.status >= 300) {
-        reject(new Error(
-          typeof result.error?.message === "string"
-            ? `تعذّر رفع الملف إلى Cloudinary: ${result.error.message}`
-            : `تعذّر رفع الملف إلى Cloudinary (HTTP ${request.status}).`,
-        ));
+        reject(new Error(translateCloudinaryError(
+          typeof result.error?.message === "string" ? result.error.message : undefined,
+          request.status,
+        )));
         return;
       }
       resolve(result);
@@ -165,6 +193,9 @@ export async function uploadMediaDirectly(
   snapchatContentType: SnapchatContentType = "STORY",
   onProcessing?: (message: string) => void,
 ): Promise<ConfirmedMediaUpload> {
+  if (file.type.startsWith("video/") && file.size > MAX_DIRECT_VIDEO_UPLOAD_BYTES) {
+    throw new Error("حجم الفيديو يتجاوز الحد المسموح به (100 ميجابايت). يرجى ضغط الفيديو أو تقليل حجمه.");
+  }
   const policy = getMediaUploadPolicy(file.type, platforms, snapchatContentType, file.size);
   if (!policy || file.size <= 0 || file.size > policy.maxBytes) {
     throw new Error(

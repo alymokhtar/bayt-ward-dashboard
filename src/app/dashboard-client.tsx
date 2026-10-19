@@ -39,6 +39,7 @@ import { cleanupFailedUpload } from "@/app/actions/cleanup-upload";
 import { deletePost } from "@/app/actions/delete-post";
 import { uploadMediaDirectly } from "@/lib/cloudinary-direct-upload";
 import {
+  MAX_DIRECT_VIDEO_UPLOAD_BYTES,
   shouldTransformMedia,
   SUPPORTED_UPLOAD_MIME_TYPES,
   validatePlatformMedia,
@@ -799,6 +800,11 @@ export default function DashboardClient({ initialPosts, initialStats, databaseAv
     setNotice("");
     if (!SUPPORTED_UPLOAD_MIME_TYPES.includes(file.type as (typeof SUPPORTED_UPLOAD_MIME_TYPES)[number])) {
       setError("الملف غير مدعوم. اختاري صورة أو فيديو.");
+      return;
+    }
+    if (file.type.startsWith("video/") && file.size > MAX_DIRECT_VIDEO_UPLOAD_BYTES) {
+      clearSelectedFile();
+      setError("حجم الفيديو يتجاوز الحد المسموح به (100 ميجابايت). يرجى ضغط الفيديو أو تقليل حجمه.");
       return;
     }
     if (objectUrlRef.current) URL.revokeObjectURL(objectUrlRef.current);

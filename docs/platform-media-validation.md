@@ -11,7 +11,7 @@ The dashboard applies these rules before direct upload, verifies the actual Clou
 | YouTube | MP4, MOV, or WebM video | No longer than 12 hours and no larger than 256 GB. No fixed minimum duration is imposed by the API rules used here. |
 | Facebook Page | JPEG/PNG/GIF image; MP4 or MOV video | Images are limited to 10 MiB. Videos are limited to 240 minutes and 10 GB; this Page-video endpoint has no minimum duration rule in this validator. |
 
-There is no longer one shared 10/100 MiB upload ceiling for dashboard media. The allowed MIME types and maximum size are intersected across the selected platforms. The TikTok 4 GB ceiling and Snapchat 100 MiB ceiling are application/adapter safeguards, not official provider-wide maximums. Cloudinary uploads larger than 20 MiB use its signed chunked Upload API. Cloudinary account limits, provider changes, and API eligibility rules can still be stricter than these client-side rules; server-side validation and the destination API remain authoritative.
+Dashboard direct uploads apply a shared 100 MiB source-video ceiling, checked when a file is selected and again when upload authorization is requested. The allowed MIME types and destination-specific limits are still intersected across selected platforms and can be stricter. The TikTok 4 GB ceiling and Snapchat 100 MiB ceiling are application/adapter safeguards, not official provider-wide maximums. Cloudinary uploads larger than 20 MiB use its signed chunked Upload API. Cloudinary account limits, provider changes, and API eligibility rules can still be stricter than these client-side rules; server-side validation and the destination API remain authoritative.
 
 ## Platform derivatives
 

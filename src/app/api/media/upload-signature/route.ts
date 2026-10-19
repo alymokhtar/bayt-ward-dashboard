@@ -2,7 +2,12 @@ import { randomUUID } from "node:crypto";
 import { NextResponse } from "next/server";
 import { isAdminAuthenticated } from "@/lib/admin-auth";
 import { cloudinary } from "@/lib/cloudinary";
-import { getMediaUploadPolicy, validatePlatformMedia, type SnapchatContentType } from "@/lib/platform-rules";
+import {
+  getMediaUploadPolicy,
+  MAX_DIRECT_VIDEO_UPLOAD_BYTES,
+  validatePlatformMedia,
+  type SnapchatContentType,
+} from "@/lib/platform-rules";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -51,6 +56,12 @@ export async function POST(request: Request) {
     !platforms.every((platform) => typeof platform === "string" && ALLOWED_PLATFORMS.has(platform)) ||
     (snapchatContentType !== undefined && snapchatContentType !== "STORY" && snapchatContentType !== "SPOTLIGHT")) {
     return jsonError("تحققي من نوع الملف وحجمه والمنصات المختارة.", 400);
+  }
+  if (mimeType.startsWith("video/") && fileSize > MAX_DIRECT_VIDEO_UPLOAD_BYTES) {
+    return jsonError(
+      "حجم الفيديو يتجاوز الحد المسموح به (100 ميجابايت). يرجى ضغط الفيديو أو تقليل حجمه.",
+      413,
+    );
   }
 
   const policy = getMediaUploadPolicy(
