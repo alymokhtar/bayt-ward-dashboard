@@ -298,12 +298,12 @@ export async function uploadMediaDirectly(
           ),
         );
       }
-      if (!confirmationResponse.ok) {
+      if (confirmationResponse.status !== 200) {
         throw new Error(responseErrorMessage(confirmed, "تعذّر التحقق من الملف المرفوع."));
       }
       break;
     }
-    if (!confirmationResponse?.ok) {
+    if (confirmationResponse?.status !== 200) {
       throw new Error("تعذّر التحقق من الملف المرفوع.");
     }
     if (!confirmed || typeof confirmed !== "object" ||

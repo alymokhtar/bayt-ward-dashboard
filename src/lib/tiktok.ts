@@ -11,6 +11,8 @@ import {
 
 const TIKTOK_API = "https://open.tiktokapis.com";
 const SINGLE_CHUNK_MAX_SIZE = 64 * 1024 * 1024;
+const VIDEO_METADATA_POLL_ATTEMPTS = 6;
+const VIDEO_METADATA_POLL_INTERVAL_MS = 3_000;
 type TikTokError = {
   code?: string;
   message?: string;
@@ -89,6 +91,14 @@ async function readVideoChunk(
   return { chunk: Buffer.concat(chunks, chunkBytes), remainder: buffered };
 }
 
+function isAvailableDuration(value: unknown): value is number {
+  return typeof value === "number" && Number.isFinite(value) && value > 0;
+}
+
+function wait(milliseconds: number) {
+  return new Promise((resolve) => setTimeout(resolve, milliseconds));
+}
+
 async function getAccessToken() {
   const settings = await prisma.settings.findUnique({
     where: { id: "store" },
@@ -165,6 +175,7 @@ async function tiktokRequest<T>(accessToken: string, path: string, body: unknown
 }
 
 export async function uploadTikTokVideo(input: {
+  postId: string;
   mediaUrl: string;
   mediaPublicId: string;
   caption: string;
@@ -175,6 +186,52 @@ export async function uploadTikTokVideo(input: {
     throw new Error("TikTok captions cannot exceed 2,200 UTF-16 code units.");
   }
   const privacyLevel = toTikTokPrivacyLevel(input.privacyLevel);
+
+  let mediaResource: Awaited<ReturnType<typeof cloudinary.api.resource>> | undefined;
+  let cloudinaryDuration: number | null = null;
+  let lastMetadataError: unknown;
+  for (let attempt = 0; attempt < VIDEO_METADATA_POLL_ATTEMPTS; attempt += 1) {
+    try {
+      mediaResource = await cloudinary.api.resource(input.mediaPublicId, { resource_type: "video" });
+      lastMetadataError = undefined;
+      cloudinaryDuration = isAvailableDuration(mediaResource.duration)
+        ? mediaResource.duration
+        : null;
+    } catch (error) {
+      lastMetadataError = error;
+    }
+
+    if (mediaResource &&
+      (cloudinaryDuration !== null || isAvailableDuration(input.durationSeconds))) {
+      break;
+    }
+    if (attempt < VIDEO_METADATA_POLL_ATTEMPTS - 1) {
+      await wait(VIDEO_METADATA_POLL_INTERVAL_MS);
+    }
+  }
+
+  if (!mediaResource) {
+    throw new Error(
+      lastMetadataError instanceof Error
+        ? "تعذّر قراءة فيديو TikTok من Cloudinary بعد عدة محاولات."
+        : "لم يُرجع Cloudinary بيانات فيديو TikTok بعد عدة محاولات.",
+    );
+  }
+
+  const mediaMimeType = mimeTypeFromCloudinaryResource(mediaResource.resource_type, mediaResource.format);
+  if (!mediaMimeType) throw new Error("TikTok يتطلب فيديو بصيغة MP4 أو MOV أو WebM.");
+  const durationSeconds = cloudinaryDuration ??
+    (isAvailableDuration(input.durationSeconds) ? input.durationSeconds : null);
+  if (cloudinaryDuration !== null && cloudinaryDuration !== input.durationSeconds) {
+    await prisma.post.update({
+      where: { id: input.postId },
+      data: { mediaDurationSeconds: cloudinaryDuration },
+    });
+  }
+  if (durationSeconds === null) {
+    throw new Error("تعذّر الحصول على مدة فيديو TikTok من Cloudinary بعد ست محاولات؛ لم يبدأ النشر.");
+  }
+
   const accessToken = await getAccessToken();
   const creator = await queryCreatorInfo(accessToken);
   if (!creator.canPost) {
@@ -184,20 +241,6 @@ export async function uploadTikTokVideo(input: {
     throw new Error("The selected TikTok privacy option is no longer available. Reopen the editor and try again.");
   }
 
-  let mediaResource;
-  try {
-    mediaResource = await cloudinary.api.resource(input.mediaPublicId, { resource_type: "video" });
-  } catch {
-    throw new Error("تعذّر التحقق من خصائص فيديو TikTok في التخزين السحابي.");
-  }
-  const mediaMimeType = mimeTypeFromCloudinaryResource(mediaResource.resource_type, mediaResource.format);
-  if (!mediaMimeType) throw new Error("TikTok يتطلب فيديو بصيغة MP4 أو MOV أو WebM.");
-  const cloudinaryDuration = typeof mediaResource.duration === "number" &&
-    Number.isFinite(mediaResource.duration) &&
-    mediaResource.duration > 0
-    ? mediaResource.duration
-    : null;
-  const durationSeconds = cloudinaryDuration ?? input.durationSeconds;
   const mediaValidation = validatePlatformMedia({
     mimeType: mediaMimeType,
     fileSize: mediaResource.bytes,

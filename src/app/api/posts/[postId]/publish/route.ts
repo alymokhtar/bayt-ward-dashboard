@@ -509,6 +509,7 @@ export async function POST(
           throw new Error("TikTok captions cannot exceed 2,200 characters.");
         }
         const uploaded = await uploadTikTokVideo({
+          postId: post.id,
           mediaUrl,
           mediaPublicId: post.cloudinaryPublicId,
           caption: post.caption,
