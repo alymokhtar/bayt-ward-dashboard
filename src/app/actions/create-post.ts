@@ -1,7 +1,9 @@
 "use server";
 
+import { cloudinary } from "@/lib/cloudinary";
 import { prisma } from "@/lib/prisma";
 import { isAdminAuthenticated } from "@/lib/admin-auth";
+import { getMediaUploadPolicy, MEDIA_UPLOAD_FORMATS } from "@/lib/media-upload-policy";
 import { isTikTokPrivacyLevel } from "@/lib/tiktok-privacy";
 
 const ALLOWED_PLATFORMS = new Set(["facebook", "instagram", "tiktok", "youtube", "snapchat"]);
@@ -75,7 +77,9 @@ export async function createPost(input: CreatePostInput): Promise<CreatePostResu
   const mediaUrl = typeof input?.mediaUrl === "string" ? input.mediaUrl : "";
   const cloudinaryPublicId =
     typeof input?.cloudinaryPublicId === "string" ? input.cloudinaryPublicId : "";
-  const mediaType = input?.mediaType === "video" ? "video" : "image";
+  const mediaType = input?.mediaType === "video" || input?.mediaType === "image"
+    ? input.mediaType
+    : null;
   const youtubeTitle = typeof input?.youtubeTitle === "string" ? input.youtubeTitle.trim() : "";
   const youtubeDescription = typeof input?.youtubeDescription === "string" ? input.youtubeDescription.trim() : "";
   const rawYoutubeTags: unknown = input?.youtubeTags;
@@ -123,6 +127,41 @@ export async function createPost(input: CreatePostInput): Promise<CreatePostResu
   if (!cloudinaryPublicId || cloudinaryPublicId.length > 512 || platforms.length === 0) {
     return { success: false, error: "اختر منصة واحدة على الأقل وتأكد من الملف المرفوع." };
   }
+  if (!mediaType) {
+    return { success: false, error: "نوع الوسائط غير صالح." };
+  }
+  if (!/^bayt-ward-dashboard\/[0-9a-f-]{36}$/i.test(cloudinaryPublicId)) {
+    return { success: false, error: "معرّف الوسائط غير صالح." };
+  }
+
+  let verifiedMedia;
+  try {
+    verifiedMedia = await cloudinary.api.resource(cloudinaryPublicId, {
+      resource_type: mediaType,
+    });
+  } catch {
+    return { success: false, error: "لم يتم العثور على الوسائط في Cloudinary أو تعذّر التحقق منها." };
+  }
+
+  const format = typeof verifiedMedia.format === "string" ? verifiedMedia.format.toLowerCase() : "";
+  const verifiedMimeType = Object.entries(MEDIA_UPLOAD_FORMATS).find(([mimeType, formats]) =>
+    mimeType.startsWith(`${mediaType}/`) && formats.includes(format),
+  )?.[0];
+  const mediaPolicy = verifiedMimeType
+    ? getMediaUploadPolicy(verifiedMimeType, platforms)
+    : null;
+  if (verifiedMedia.public_id !== cloudinaryPublicId ||
+    verifiedMedia.resource_type !== mediaType ||
+    verifiedMedia.secure_url !== mediaUrl ||
+    !verifiedMedia.secure_url.startsWith("https://res.cloudinary.com/") ||
+    (verifiedMedia.folder && verifiedMedia.folder !== "bayt-ward-dashboard") ||
+    typeof verifiedMedia.bytes !== "number" ||
+    verifiedMedia.bytes <= 0 ||
+    !mediaPolicy ||
+    verifiedMedia.bytes > mediaPolicy.maxBytes) {
+    return { success: false, error: "بيانات الوسائط لا تطابق الملف المرفوع أو حدود النوع والحجم." };
+  }
+
   if (platforms.includes("tiktok") && mediaType !== "video") {
     return { success: false, error: "النشر على TikTok يتطلب اختيار ملف فيديو." };
   }

@@ -37,7 +37,8 @@ import {
 import { createPost, type SavedPost } from "@/app/actions/create-post";
 import { cleanupFailedUpload } from "@/app/actions/cleanup-upload";
 import { deletePost } from "@/app/actions/delete-post";
-import { uploadMedia } from "@/app/actions/upload-media";
+import { uploadMediaDirectly } from "@/lib/cloudinary-direct-upload";
+import { getMediaUploadPolicy } from "@/lib/media-upload-policy";
 import {
   isTikTokPrivacyLevel,
   TIKTOK_PRIVACY_LABELS,
@@ -374,6 +375,7 @@ export default function DashboardClient({ initialPosts, initialStats, databaseAv
   const [selectedPlatforms, setSelectedPlatforms] = useState<string[]>(["instagram"]);
   const [isDragging, setIsDragging] = useState(false);
   const [isSaving, setIsSaving] = useState(false);
+  const [uploadProgress, setUploadProgress] = useState<number | null>(null);
   const [error, setError] = useState("");
   const [notice, setNotice] = useState("");
   const [previewUrl, setPreviewUrl] = useState("");
@@ -641,16 +643,13 @@ export default function DashboardClient({ initialPosts, initialStats, databaseAv
     if (!file) return;
     setError("");
     setNotice("");
-    if (!file.type.startsWith("image/") && !file.type.startsWith("video/")) {
+    const uploadPolicy = getMediaUploadPolicy(file.type, selectedPlatforms);
+    if (!uploadPolicy) {
       setError("الملف غير مدعوم. اختاري صورة أو فيديو.");
       return;
     }
-    const maxSize = file.type.startsWith("video/") &&
-      selectedPlatforms.some((platform) => platform === "youtube" || platform === "tiktok" || platform === "snapchat")
-      ? 100 * 1024 * 1024
-      : 10 * 1024 * 1024;
-    if (file.size > maxSize) {
-      setError(maxSize > 10 * 1024 * 1024
+    if (file.size > uploadPolicy.maxBytes) {
+      setError(uploadPolicy.maxBytes > 10 * 1024 * 1024
         ? "الحد الأقصى لحجم فيديو YouTube أو TikTok أو Snapchat هو 100 ميجابايت."
         : "الحد الأقصى لحجم الملف هو 10 ميجابايت.");
       return;
@@ -822,14 +821,12 @@ export default function DashboardClient({ initialPosts, initialStats, databaseAv
         return;
       }
 
-      const formData = new FormData();
-      formData.set("file", selectedFile);
-      for (const platform of selectedPlatforms) formData.append("platforms", platform);
-      const upload = await uploadMedia(formData);
-      if (!upload.success) {
-        setError(upload.error);
-        return;
-      }
+      setUploadProgress(0);
+      const upload = await uploadMediaDirectly(
+        selectedFile,
+        selectedPlatforms,
+        setUploadProgress,
+      );
 
       const result = await createPost({
         caption: finalCaption,
@@ -907,9 +904,12 @@ export default function DashboardClient({ initialPosts, initialStats, databaseAv
       setYoutubeDescription(DEFAULT_YOUTUBE_DESCRIPTION);
       setYoutubeTags(DEFAULT_YOUTUBE_TAGS);
       setTiktokConsent(false);
-    } catch {
-      setError("حدث خطأ غير متوقع. يرجى المحاولة مرة أخرى.");
+    } catch (submitError) {
+      setError(submitError instanceof Error
+        ? submitError.message
+        : "حدث خطأ غير متوقع. يرجى المحاولة مرة أخرى.");
     } finally {
+      setUploadProgress(null);
       setIsSaving(false);
     }
   }
@@ -1040,7 +1040,7 @@ export default function DashboardClient({ initialPosts, initialStats, databaseAv
                             <span className="truncate text-xs font-medium text-[#58625a]">{selectedFile.name}</span>
                             <span className="shrink-0 text-[10px] text-[#9a9b94]">{formatBytes(selectedFile.size)}</span>
                           </div>
-                          <button type="button" onClick={clearSelectedFile} className="grid size-8 shrink-0 place-items-center rounded-lg text-[#989991] transition hover:bg-[#fff1ef] hover:text-[#b4534c]" aria-label="إزالة الملف">
+                          <button type="button" onClick={clearSelectedFile} disabled={isSaving} className="grid size-8 shrink-0 place-items-center rounded-lg text-[#989991] transition hover:bg-[#fff1ef] hover:text-[#b4534c] disabled:cursor-not-allowed disabled:opacity-50" aria-label="إزالة الملف">
                             <X size={16} />
                           </button>
                         </div>
@@ -1065,6 +1065,27 @@ export default function DashboardClient({ initialPosts, initialStats, databaseAv
                         <span className="mt-3 text-[10px] text-[#adaea7]">JPG · PNG · WEBP · MP4 · MOV</span>
                       </button>
                     )}
+                    {isSaving && uploadProgress !== null ? (
+                      <div className="mt-3 space-y-1.5" role="status" aria-live="polite">
+                        <div className="flex items-center justify-between text-[11px] text-[#68756b]">
+                          <span>{uploadProgress === 100 ? "اكتمل رفع الملف، جارٍ التحقق منه..." : "جارٍ رفع الملف مباشرة إلى التخزين..."}</span>
+                          <span>{uploadProgress}%</span>
+                        </div>
+                        <div
+                          className="h-2 overflow-hidden rounded-full bg-[#e9eee8]"
+                          role="progressbar"
+                          aria-label="تقدم رفع الملف"
+                          aria-valuemin={0}
+                          aria-valuemax={100}
+                          aria-valuenow={uploadProgress}
+                        >
+                          <div
+                            className="h-full rounded-full bg-[#3f806d] transition-[width] duration-150"
+                            style={{ width: `${uploadProgress}%` }}
+                          />
+                        </div>
+                      </div>
+                    ) : null}
                   </div>
 
                   <div>
