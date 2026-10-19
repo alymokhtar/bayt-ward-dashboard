@@ -38,7 +38,7 @@ import { createPost, type SavedPost } from "@/app/actions/create-post";
 import { cleanupFailedUpload } from "@/app/actions/cleanup-upload";
 import { deletePost } from "@/app/actions/delete-post";
 import { uploadMediaDirectly } from "@/lib/cloudinary-direct-upload";
-import { getMediaUploadPolicy } from "@/lib/media-upload-policy";
+import { SUPPORTED_UPLOAD_MIME_TYPES, validatePlatformMedia } from "@/lib/platform-rules";
 import {
   isTikTokPrivacyLevel,
   TIKTOK_PRIVACY_LABELS,
@@ -397,6 +397,18 @@ export default function DashboardClient({ initialPosts, initialStats, databaseAv
     `${post.caption} ${post.platforms.join(" ")}`.toLocaleLowerCase("ar").includes(searchTerm.trim().toLocaleLowerCase("ar")),
   );
 
+  const mediaValidation = selectedFile
+    ? validatePlatformMedia({
+        mimeType: selectedFile.type,
+        fileSize: selectedFile.size,
+        platforms: selectedPlatforms,
+        width: videoDimensions?.width,
+        height: videoDimensions?.height,
+        durationSeconds: videoDuration,
+        snapchatContentType,
+        tiktokMaxDurationSeconds: tiktokMaxDuration,
+      })
+    : { errors: [], warnings: [], pending: [] };
   const tiktokSelected = selectedPlatforms.includes("tiktok");
   useEffect(() => {
     if (!tiktokSelected || !tiktokConnected) return;
@@ -643,15 +655,8 @@ export default function DashboardClient({ initialPosts, initialStats, databaseAv
     if (!file) return;
     setError("");
     setNotice("");
-    const uploadPolicy = getMediaUploadPolicy(file.type, selectedPlatforms);
-    if (!uploadPolicy) {
+    if (!SUPPORTED_UPLOAD_MIME_TYPES.includes(file.type as (typeof SUPPORTED_UPLOAD_MIME_TYPES)[number])) {
       setError("الملف غير مدعوم. اختاري صورة أو فيديو.");
-      return;
-    }
-    if (file.size > uploadPolicy.maxBytes) {
-      setError(uploadPolicy.maxBytes > 10 * 1024 * 1024
-        ? "الحد الأقصى لحجم فيديو YouTube أو TikTok أو Snapchat هو 100 ميجابايت."
-        : "الحد الأقصى لحجم الملف هو 10 ميجابايت.");
       return;
     }
     if (objectUrlRef.current) URL.revokeObjectURL(objectUrlRef.current);
@@ -689,15 +694,25 @@ export default function DashboardClient({ initialPosts, initialStats, databaseAv
       setError("اختاري منصة واحدة على الأقل.");
       return;
     }
+    const platformValidation = validatePlatformMedia({
+      mimeType: selectedFile.type,
+      fileSize: selectedFile.size,
+      platforms: selectedPlatforms,
+      width: videoDimensions?.width,
+      height: videoDimensions?.height,
+      durationSeconds: videoDuration,
+      snapchatContentType,
+      tiktokMaxDurationSeconds: tiktokMaxDuration,
+    });
+    if (platformValidation.errors.length > 0) {
+      setError(platformValidation.errors[0]);
+      return;
+    }
+    if (platformValidation.pending.length > 0) {
+      setError(platformValidation.pending[0]);
+      return;
+    }
     if (selectedPlatforms.includes("youtube")) {
-      if (!selectedFile.type.startsWith("video/")) {
-        setError("اختاري ملف فيديو للنشر على YouTube.");
-        return;
-      }
-      if (selectedFile.size > 100 * 1024 * 1024) {
-        setError("الحد الأقصى لحجم فيديو YouTube هو 100 ميجابايت.");
-        return;
-      }
       if (!youtubeTitle.trim() || youtubeTitle.trim().length > 100) {
         setError("عنوان YouTube مطلوب ويجب ألا يتجاوز 100 حرف.");
         return;
@@ -712,27 +727,12 @@ export default function DashboardClient({ initialPosts, initialStats, databaseAv
       }
     }
     if (selectedPlatforms.includes("tiktok")) {
-      if (!selectedFile.type.startsWith("video/")) {
-        setError("اختاري ملف فيديو للنشر على TikTok.");
-        return;
-      }
-      if (selectedFile.size > 100 * 1024 * 1024) {
-        setError("الحد الأقصى لحجم فيديو TikTok هو 100 ميجابايت.");
-        return;
-      }
       if (!tiktokConnected) {
         setError("اربطي حساب TikTok من الإعدادات قبل النشر.");
         return;
       }
       if (tiktokInfoError || !tiktokCanPost || !tiktokPrivacyOptions.includes(tiktokPrivacyLevel)) {
         setError(tiktokInfoError || "تعذر التحقق من خيارات النشر لحساب TikTok. أعيدي المحاولة.");
-        return;
-      }
-      if (tiktokMaxDuration !== null &&
-        (videoDuration === null || videoDuration > tiktokMaxDuration)) {
-        setError(videoDuration === null
-          ? "انتظري حتى يتم التحقق من مدة الفيديو قبل النشر على TikTok."
-          : `مدة الفيديو تتجاوز الحد الأقصى لهذا الحساب وهو ${tiktokMaxDuration} ثانية.`);
         return;
       }
       if (!tiktokConsent) {
@@ -751,32 +751,6 @@ export default function DashboardClient({ initialPosts, initialStats, databaseAv
       }
       if (!snapchatProfileId) {
         setError("أضيفي معرّف Snapchat Public Profile في الإعدادات قبل النشر.");
-        return;
-      }
-      if (snapchatContentType === "SPOTLIGHT" && selectedFile.type !== "video/mp4") {
-        setError("نشر Snapchat Spotlight يتطلب فيديو بصيغة MP4.");
-        return;
-      }
-      if (selectedFile.type.startsWith("video/")) {
-        if (selectedFile.type !== "video/mp4") {
-          setError("نشر فيديو Snapchat يتطلب ملف MP4.");
-          return;
-        }
-        const minimumDuration = snapchatContentType === "SPOTLIGHT" ? 6 : 5;
-        if (videoDuration === null || !videoDimensions) {
-          setError("انتظري حتى يكتمل التحقق من مدة وأبعاد الفيديو.");
-          return;
-        }
-        if (videoDuration < minimumDuration || videoDuration > 60) {
-          setError(`مدة فيديو Snapchat يجب أن تكون من ${minimumDuration} إلى 60 ثانية.`);
-          return;
-        }
-        if (videoDimensions.width < 540 || videoDimensions.height < 960) {
-          setError("دقة فيديو Snapchat يجب ألا تقل عن 540×960 بكسل.");
-          return;
-        }
-      } else if (!["image/jpeg", "image/png"].includes(selectedFile.type)) {
-        setError("قصص Snapchat تدعم صور JPG أو PNG في لوحة التحكم.");
         return;
       }
       if (snapchatContentType === "SPOTLIGHT" &&
@@ -826,6 +800,7 @@ export default function DashboardClient({ initialPosts, initialStats, databaseAv
         selectedFile,
         selectedPlatforms,
         setUploadProgress,
+        snapchatContentType,
       );
 
       const result = await createPost({
@@ -1004,7 +979,7 @@ export default function DashboardClient({ initialPosts, initialStats, databaseAv
                   <div>
                     <div className="mb-3 flex items-center justify-between">
                       <label htmlFor="media-file" className="text-sm font-bold text-[#3b463f]">الوسائط</label>
-                      <span className="text-[11px] text-[#9b9d95]">صورة أو فيديو · حتى 100 MB لفيديو YouTube أو TikTok أو Snapchat</span>
+                      <span className="text-[11px] text-[#9b9d95]">سيُفحص النوع والحجم والمدة والأبعاد حسب المنصات المحددة</span>
                     </div>
                     <input
                       ref={inputRef}
@@ -1031,7 +1006,18 @@ export default function DashboardClient({ initialPosts, initialStats, databaseAv
                               }}
                             />
                           ) : (
-                            <Image src={previewUrl} alt="معاينة الوسائط المختارة" fill sizes="(max-width: 768px) 100vw, 720px" className="object-contain" unoptimized />
+                            <Image
+                              src={previewUrl}
+                              alt="معاينة الوسائط المختارة"
+                              fill
+                              sizes="(max-width: 768px) 100vw, 720px"
+                              className="object-contain"
+                              unoptimized
+                              onLoad={(event) => setVideoDimensions({
+                                width: event.currentTarget.naturalWidth,
+                                height: event.currentTarget.naturalHeight,
+                              })}
+                            />
                           )}
                         </div>
                         <div className="flex items-center justify-between gap-3 border-t border-[#eae7df] bg-white px-4 py-3">
@@ -1065,6 +1051,21 @@ export default function DashboardClient({ initialPosts, initialStats, databaseAv
                         <span className="mt-3 text-[10px] text-[#adaea7]">JPG · PNG · WEBP · MP4 · MOV</span>
                       </button>
                     )}
+                    {mediaValidation.errors.length > 0 ? (
+                      <div role="alert" className="mt-3 space-y-1 rounded-xl border border-[#f0d4cc] bg-[#fff5f2] px-4 py-3 text-xs leading-5 text-[#a44f46]">
+                        {mediaValidation.errors.map((message) => <p key={message}>{message}</p>)}
+                      </div>
+                    ) : null}
+                    {mediaValidation.pending.length > 0 ? (
+                      <div role="status" className="mt-3 space-y-1 rounded-xl border border-[#eee4c8] bg-[#fffdf4] px-4 py-3 text-xs leading-5 text-[#8a7043]">
+                        {mediaValidation.pending.map((message) => <p key={message}>{message}</p>)}
+                      </div>
+                    ) : null}
+                    {mediaValidation.warnings.length > 0 ? (
+                      <div role="status" className="mt-3 space-y-1 rounded-xl border border-[#eee4c8] bg-[#fffdf4] px-4 py-3 text-xs leading-5 text-[#8a7043]">
+                        {mediaValidation.warnings.map((message) => <p key={message}>{message}</p>)}
+                      </div>
+                    ) : null}
                     {isSaving && uploadProgress !== null ? (
                       <div className="mt-3 space-y-1.5" role="status" aria-live="polite">
                         <div className="flex items-center justify-between text-[11px] text-[#68756b]">
@@ -1160,7 +1161,7 @@ export default function DashboardClient({ initialPosts, initialStats, databaseAv
                     <div className="space-y-4 rounded-2xl border border-[#f0dcdc] bg-[#fffafa] p-4 sm:p-5">
                       <div>
                         <h3 className="text-sm font-bold text-[#3b463f]">تفاصيل فيديو YouTube</h3>
-                        <p className="mt-1 text-[11px] text-[#92958d]">اختاري فيديو حتى 100 ميجابايت. العنوان مطلوب والوصف اختياري.</p>
+                        <p className="mt-1 text-[11px] text-[#92958d]">يُتحقق من قيود YouTube للمدة والحجم والصيغة قبل النشر. العنوان مطلوب والوصف اختياري.</p>
                       </div>
                       <div>
                         <label htmlFor="youtube-title" className="mb-2 block text-xs font-semibold text-[#536057]">عنوان الفيديو</label>

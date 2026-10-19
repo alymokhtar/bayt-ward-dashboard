@@ -1,5 +1,7 @@
 import { decryptTikTokToken, encryptTikTokToken } from "@/lib/meta-token";
 import { prisma } from "@/lib/prisma";
+import { cloudinary } from "@/lib/cloudinary";
+import { mimeTypeFromCloudinaryResource, validatePlatformMedia } from "@/lib/platform-rules";
 import {
   createTikTokDirectPostPayload,
   isTikTokPrivacyLevel,
@@ -8,9 +10,7 @@ import {
 } from "@/lib/tiktok-privacy";
 
 const TIKTOK_API = "https://open.tiktokapis.com";
-const CHUNK_SIZE = 10 * 1024 * 1024;
 const SINGLE_CHUNK_MAX_SIZE = 64 * 1024 * 1024;
-const MAX_VIDEO_SIZE = 100 * 1024 * 1024;
 type TikTokError = {
   code?: string;
   message?: string;
@@ -66,28 +66,27 @@ function requiredEnv(name: "TIKTOK_CLIENT_KEY" | "TIKTOK_CLIENT_SECRET") {
   return value;
 }
 
-async function readVideoBody(response: Response) {
-  if (!response.body) throw new Error("Cloudinary returned an empty video stream.");
-  const reader = response.body.getReader();
+async function readVideoChunk(
+  reader: ReadableStreamDefaultReader<Uint8Array>,
+  size: number,
+  remainder: Buffer,
+) {
   const chunks: Buffer[] = [];
-  let size = 0;
-  try {
-    while (true) {
+  let buffered = remainder;
+  let chunkBytes = 0;
+  while (chunkBytes < size) {
+    if (buffered.length === 0) {
       const { done, value } = await reader.read();
-      if (done) break;
-      size += value.byteLength;
-      if (size > MAX_VIDEO_SIZE) {
-        throw new Error("TikTok video uploads are limited to 100 MiB in this dashboard.");
-      }
-      chunks.push(Buffer.from(value));
+      if (done || !value) throw new Error("Cloudinary returned a truncated video stream.");
+      buffered = Buffer.from(value);
     }
-  } catch (error) {
-    await reader.cancel(error);
-    throw error;
-  } finally {
-    reader.releaseLock();
+
+    const take = Math.min(size - chunkBytes, buffered.length);
+    chunks.push(buffered.subarray(0, take));
+    chunkBytes += take;
+    buffered = buffered.subarray(take);
   }
-  return Buffer.concat(chunks, size);
+  return { chunk: Buffer.concat(chunks, chunkBytes), remainder: buffered };
 }
 
 async function getAccessToken() {
@@ -167,6 +166,7 @@ async function tiktokRequest<T>(accessToken: string, path: string, body: unknown
 
 export async function uploadTikTokVideo(input: {
   mediaUrl: string;
+  mediaPublicId: string;
   caption: string;
   privacyLevel: string;
 }) {
@@ -183,6 +183,25 @@ export async function uploadTikTokVideo(input: {
     throw new Error("The selected TikTok privacy option is no longer available. Reopen the editor and try again.");
   }
 
+  let mediaResource;
+  try {
+    mediaResource = await cloudinary.api.resource(input.mediaPublicId, { resource_type: "video" });
+  } catch {
+    throw new Error("تعذّر التحقق من خصائص فيديو TikTok في التخزين السحابي.");
+  }
+  const mediaMimeType = mimeTypeFromCloudinaryResource(mediaResource.resource_type, mediaResource.format);
+  if (!mediaMimeType) throw new Error("TikTok يتطلب فيديو بصيغة MP4 أو MOV أو WebM.");
+  const mediaValidation = validatePlatformMedia({
+    mimeType: mediaMimeType,
+    fileSize: mediaResource.bytes,
+    platforms: ["tiktok"],
+    durationSeconds: mediaResource.duration,
+    tiktokMaxDurationSeconds: creator.maxVideoPostDurationSeconds,
+  });
+  if (mediaValidation.errors.length > 0 || mediaValidation.pending.length > 0) {
+    throw new Error([...mediaValidation.errors, ...mediaValidation.pending].join(" "));
+  }
+
   const parsedUrl = new URL(input.mediaUrl);
   if (parsedUrl.protocol !== "https:" || parsedUrl.hostname !== "res.cloudinary.com") {
     throw new Error("Stored video URL is not a valid Cloudinary URL.");
@@ -192,26 +211,23 @@ export async function uploadTikTokVideo(input: {
     throw new Error(`Could not fetch the stored video (HTTP ${videoResponse.status}).`);
   }
   const declaredSize = Number(videoResponse.headers.get("content-length"));
-  if (declaredSize > MAX_VIDEO_SIZE) {
-    throw new Error("TikTok video uploads are limited to 100 MiB in this dashboard.");
+  if (!Number.isSafeInteger(declaredSize) || declaredSize !== mediaResource.bytes || declaredSize <= 0) {
+    throw new Error("TikTok video size could not be verified against the stored media.");
   }
   const mimeType = videoResponse.headers.get("content-type")?.split(";")[0]?.trim() ?? "";
   if (!["video/mp4", "video/quicktime", "video/webm"].includes(mimeType)) {
     throw new Error("TikTok supports MP4, QuickTime, and WebM video files.");
   }
-  const video = await readVideoBody(videoResponse);
-  if (!video.byteLength) throw new Error("The stored video is empty.");
-  if (video.byteLength > MAX_VIDEO_SIZE) {
-    throw new Error("TikTok video uploads are limited to 100 MiB in this dashboard.");
-  }
-  const chunkSize = video.byteLength <= SINGLE_CHUNK_MAX_SIZE
-    ? video.byteLength
-    : CHUNK_SIZE;
-  const totalChunkCount = Math.ceil(video.byteLength / chunkSize);
+  if (mimeType !== mediaMimeType) throw new Error("TikTok media type does not match the stored Cloudinary asset.");
+  if (!videoResponse.body) throw new Error("Cloudinary returned an empty video stream.");
+  const totalChunkCount = Math.ceil(declaredSize / SINGLE_CHUNK_MAX_SIZE);
+  const chunkSize = totalChunkCount === 1
+    ? declaredSize
+    : Math.ceil(declaredSize / totalChunkCount);
   const payload = createTikTokDirectPostPayload({
     title: input.caption,
     privacyLevel,
-    videoSize: video.byteLength,
+    videoSize: declaredSize,
     chunkSize,
     totalChunkCount,
   });
@@ -228,35 +244,44 @@ export async function uploadTikTokVideo(input: {
     throw new Error("TikTok returned an invalid video upload URL.");
   }
 
+  const reader = videoResponse.body.getReader();
   try {
     let start = 0;
+    let remainder: Buffer<ArrayBufferLike> = Buffer.alloc(0);
     for (let index = 0; index < totalChunkCount; index += 1) {
-      const end = index === totalChunkCount - 1
-        ? video.byteLength
-        : Math.min(start + chunkSize, video.byteLength);
-      const chunk = video.subarray(start, end);
-      const uploadResponse = await fetch(uploadUrl, {
-        method: "PUT",
-        headers: {
-          "Content-Type": mimeType,
-          "Content-Length": String(chunk.byteLength),
-          "Content-Range": `bytes ${start}-${end - 1}/${video.byteLength}`,
-        },
-        body: new Blob([chunk], { type: mimeType }),
-        cache: "no-store",
-      });
-      const expectedStatus = index === totalChunkCount - 1 ? 201 : 206;
-      if (uploadResponse.status !== expectedStatus) {
-        throw new Error(`TikTok video transfer failed (HTTP ${uploadResponse.status}).`);
+      const expectedChunkBytes = Math.min(chunkSize, declaredSize - start);
+      const next = await readVideoChunk(reader, expectedChunkBytes, remainder);
+      remainder = next.remainder;
+      const end = start + next.chunk.byteLength;
+      try {
+        const uploadResponse = await fetch(uploadUrl, {
+          method: "PUT",
+          headers: {
+            "Content-Type": mimeType,
+            "Content-Length": String(next.chunk.byteLength),
+            "Content-Range": `bytes ${start}-${end - 1}/${declaredSize}`,
+          },
+          body: new Blob([next.chunk], { type: mimeType }),
+          cache: "no-store",
+        });
+        const expectedStatus = index === totalChunkCount - 1 ? 201 : 206;
+        if (uploadResponse.status !== expectedStatus) {
+          throw new Error(`TikTok video transfer failed (HTTP ${uploadResponse.status}).`);
+        }
+      } finally {
+        next.chunk.fill(0);
       }
       start = end;
     }
   } catch (error) {
+    await reader.cancel(error).catch(() => undefined);
     throw new TikTokPublishError(
       error instanceof Error ? error.message : "TikTok video transfer failed.",
       true,
       initialized.publish_id,
     );
+  } finally {
+    reader.releaseLock();
   }
 
   return { publishId: initialized.publish_id };

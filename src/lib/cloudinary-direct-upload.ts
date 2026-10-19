@@ -1,7 +1,7 @@
 "use client";
 
 import { cleanupFailedUpload } from "@/app/actions/cleanup-upload";
-import { getMediaUploadPolicy } from "@/lib/media-upload-policy";
+import { getMediaUploadPolicy, type SnapchatContentType } from "@/lib/platform-rules";
 
 type SignatureResponse = {
   apiKey: string;
@@ -24,6 +24,7 @@ type CloudinaryUploadResponse = {
   resource_type?: unknown;
   bytes?: unknown;
   secure_url?: unknown;
+  done?: unknown;
   error?: { message?: unknown };
 };
 
@@ -40,14 +41,17 @@ async function responseError(response: Response, fallback: string) {
     : fallback;
 }
 
-function uploadToCloudinary(
-  file: File,
+function uploadChunk(
+  chunk: Blob,
   signature: SignatureResponse,
-  onProgress: (progress: number) => void,
-): Promise<{ publicId: string; secureUrl: string }> {
+  uploadId: string | null,
+  start: number,
+  total: number,
+  onProgress: (loaded: number) => void,
+): Promise<CloudinaryUploadResponse> {
   return new Promise((resolve, reject) => {
     const formData = new FormData();
-    formData.set("file", file);
+    formData.set("file", chunk);
     formData.set("api_key", signature.apiKey);
     for (const [key, value] of Object.entries(signature.params)) {
       formData.set(key, String(value));
@@ -56,9 +60,13 @@ function uploadToCloudinary(
     const request = new XMLHttpRequest();
     request.open("POST", signature.uploadUrl);
     request.timeout = 15 * 60 * 1000;
+    if (uploadId) {
+      request.setRequestHeader("X-Unique-Upload-Id", uploadId);
+      request.setRequestHeader("Content-Range", `bytes ${start}-${start + chunk.size - 1}/${total}`);
+    }
     request.upload.addEventListener("progress", (event) => {
       if (event.lengthComputable) {
-        onProgress(Math.min(99, Math.round((event.loaded / event.total) * 100)));
+        onProgress(event.loaded);
       }
     });
     request.addEventListener("load", () => {
@@ -70,12 +78,7 @@ function uploadToCloudinary(
         return;
       }
 
-      if (request.status < 200 || request.status >= 300 ||
-        typeof result.public_id !== "string" ||
-        result.resource_type !== signature.mediaType ||
-        typeof result.bytes !== "number" ||
-        typeof result.secure_url !== "string" ||
-        !result.secure_url.startsWith("https://res.cloudinary.com/")) {
+      if (request.status < 200 || request.status >= 300) {
         reject(new Error(
           typeof result.error?.message === "string"
             ? `تعذّر رفع الملف إلى Cloudinary: ${result.error.message}`
@@ -83,8 +86,7 @@ function uploadToCloudinary(
         ));
         return;
       }
-      onProgress(100);
-      resolve({ publicId: result.public_id, secureUrl: result.secure_url });
+      resolve(result);
     });
     request.addEventListener("error", () => reject(new Error("انقطع الاتصال أثناء رفع الملف إلى Cloudinary.")));
     request.addEventListener("timeout", () => reject(new Error("انتهت مهلة رفع الملف إلى Cloudinary.")));
@@ -93,12 +95,52 @@ function uploadToCloudinary(
   });
 }
 
+async function uploadToCloudinary(
+  file: File,
+  signature: SignatureResponse,
+  onProgress: (progress: number) => void,
+) {
+  const chunkSize = 20 * 1024 * 1024;
+  const isChunked = file.size > chunkSize;
+  const uploadId = isChunked ? crypto.randomUUID() : null;
+  let result: CloudinaryUploadResponse | null = null;
+
+  for (let start = 0; start < file.size; start += chunkSize) {
+    const end = Math.min(start + chunkSize, file.size);
+    const chunk = file.slice(start, end);
+    let currentLoaded = 0;
+    const chunkResult = await uploadChunk(
+      chunk,
+      signature,
+      uploadId,
+      start,
+      file.size,
+      (loaded) => {
+        currentLoaded = loaded;
+        onProgress(Math.min(99, Math.round(((start + currentLoaded) / file.size) * 100)));
+      },
+    );
+    if (end === file.size) result = chunkResult;
+  }
+
+  if (!result || typeof result.public_id !== "string" ||
+    result.resource_type !== signature.mediaType ||
+    typeof result.bytes !== "number" ||
+    typeof result.secure_url !== "string" ||
+    !result.secure_url.startsWith("https://res.cloudinary.com/")) {
+    throw new Error("لم يُرجع Cloudinary بيانات اكتمال رفع صالحة.");
+  }
+  onProgress(100);
+  return { publicId: result.public_id, secureUrl: result.secure_url };
+}
+
 export async function uploadMediaDirectly(
   file: File,
   platforms: string[],
   onProgress: (progress: number) => void,
+  snapchatContentType: SnapchatContentType = "STORY",
 ): Promise<ConfirmedMediaUpload> {
-  const policy = getMediaUploadPolicy(file.type, platforms);
+  const policy = getMediaUploadPolicy(file.type, platforms, snapchatContentType);
   if (!policy || file.size <= 0 || file.size > policy.maxBytes) {
     throw new Error(
       policy?.mediaType === "video"
@@ -115,31 +157,69 @@ export async function uploadMediaDirectly(
       mimeType: file.type,
       fileSize: file.size,
       platforms,
+      snapchatContentType,
     }),
   });
   if (!signatureResponse.ok) {
     throw new Error(await responseError(signatureResponse, "تعذّر تجهيز رفع الملف."));
   }
-  const signature: unknown = await signatureResponse.json();
-  if (!signature || typeof signature !== "object" ||
-    !("params" in signature) || !signature.params || typeof signature.params !== "object" ||
-    !("uploadUrl" in signature) || typeof signature.uploadUrl !== "string" ||
-    !("apiKey" in signature) || typeof signature.apiKey !== "string" ||
-    !("cloudName" in signature) || typeof signature.cloudName !== "string" ||
-    !("mediaType" in signature) || (signature.mediaType !== "image" && signature.mediaType !== "video") ||
-    !("maxBytes" in signature) || typeof signature.maxBytes !== "number" ||
-    !("signature" in signature.params) || typeof signature.params.signature !== "string" ||
-    !("public_id" in signature.params) || typeof signature.params.public_id !== "string" ||
-    !("allowed_formats" in signature.params) || typeof signature.params.allowed_formats !== "string" ||
-    !("overwrite" in signature.params) || typeof signature.params.overwrite !== "boolean" ||
-    !("tags" in signature.params) || typeof signature.params.tags !== "string" ||
-    !("timestamp" in signature.params) || typeof signature.params.timestamp !== "number" ||
-    signature.params.public_id.length === 0 || signature.maxBytes < file.size ||
-    signature.mediaType !== policy.mediaType) {
+  const signatureResponseBody: unknown = await signatureResponse.json();
+  if (!signatureResponseBody || typeof signatureResponseBody !== "object" ||
+    !("params" in signatureResponseBody) || !signatureResponseBody.params ||
+    typeof signatureResponseBody.params !== "object" ||
+    !("uploadUrl" in signatureResponseBody) || typeof signatureResponseBody.uploadUrl !== "string" ||
+    !("apiKey" in signatureResponseBody) || typeof signatureResponseBody.apiKey !== "string" ||
+    !("cloudName" in signatureResponseBody) || typeof signatureResponseBody.cloudName !== "string" ||
+    !("mediaType" in signatureResponseBody) ||
+    (signatureResponseBody.mediaType !== "image" && signatureResponseBody.mediaType !== "video") ||
+    !("maxBytes" in signatureResponseBody) || typeof signatureResponseBody.maxBytes !== "number" ||
+    !("signature" in signatureResponseBody.params) || typeof signatureResponseBody.params.signature !== "string" ||
+    !("public_id" in signatureResponseBody.params) || typeof signatureResponseBody.params.public_id !== "string" ||
+    !("allowed_formats" in signatureResponseBody.params) || typeof signatureResponseBody.params.allowed_formats !== "string" ||
+    !("overwrite" in signatureResponseBody.params) || typeof signatureResponseBody.params.overwrite !== "boolean" ||
+    !("tags" in signatureResponseBody.params) || typeof signatureResponseBody.params.tags !== "string" ||
+    !("timestamp" in signatureResponseBody.params) || typeof signatureResponseBody.params.timestamp !== "number" ||
+    signatureResponseBody.params.public_id.length === 0 ||
+    signatureResponseBody.maxBytes < file.size ||
+    signatureResponseBody.mediaType !== policy.mediaType) {
     throw new Error("أعاد الخادم تصريح رفع غير صالح.");
   }
+  const signature: SignatureResponse = {
+    apiKey: signatureResponseBody.apiKey,
+    cloudName: signatureResponseBody.cloudName,
+    mediaType: signatureResponseBody.mediaType,
+    maxBytes: signatureResponseBody.maxBytes,
+    uploadUrl: signatureResponseBody.uploadUrl,
+    params: {
+      allowed_formats: signatureResponseBody.params.allowed_formats,
+      overwrite: signatureResponseBody.params.overwrite,
+      public_id: signatureResponseBody.params.public_id,
+      tags: signatureResponseBody.params.tags,
+      timestamp: signatureResponseBody.params.timestamp,
+      signature: signatureResponseBody.params.signature,
+    },
+  };
+  const uploadUrl = new URL(signature.uploadUrl);
+  if (uploadUrl.origin !== "https://api.cloudinary.com" ||
+    uploadUrl.pathname !== `/v1_1/${encodeURIComponent(signature.cloudName)}/${policy.mediaType}/upload`) {
+    throw new Error("عنوان الرفع الذي أعاده الخادم غير صالح.");
+  }
 
-  const uploadData = await uploadToCloudinary(file, signature as SignatureResponse, onProgress);
+  let uploadData: { publicId: string; secureUrl: string };
+  try {
+    uploadData = await uploadToCloudinary(file, signature, onProgress);
+  } catch (uploadError) {
+    const cleanedUp = await cleanupFailedUpload(
+      signature.params.public_id,
+      `https://res.cloudinary.com/${signature.cloudName}/${signature.mediaType}/upload/${signature.params.public_id}`,
+    );
+    const errorMessage = uploadError instanceof Error
+      ? uploadError.message
+      : "تعذّر رفع الملف إلى Cloudinary.";
+    throw new Error(cleanedUp
+      ? errorMessage
+      : `${errorMessage} تعذّر تنظيف أي جزء مكتمل من الرفع.`);
+  }
   if (uploadData.publicId !== signature.params.public_id) {
     throw new Error("معرّف الملف المرفوع لا يطابق تصريح الخادم.");
   }
@@ -154,6 +234,7 @@ export async function uploadMediaDirectly(
         mimeType: file.type,
         fileSize: file.size,
         platforms,
+        snapchatContentType,
       }),
     });
     if (!confirmResponse.ok) {
@@ -164,11 +245,17 @@ export async function uploadMediaDirectly(
     if (!confirmed || typeof confirmed !== "object" ||
       !("success" in confirmed) || confirmed.success !== true ||
       !("publicId" in confirmed) || confirmed.publicId !== uploadData.publicId ||
-      !("mediaType" in confirmed) || confirmed.mediaType !== policy.mediaType ||
+      !("mediaType" in confirmed) ||
+      (confirmed.mediaType !== "image" && confirmed.mediaType !== "video") ||
+      confirmed.mediaType !== policy.mediaType ||
       !("mediaUrl" in confirmed) || typeof confirmed.mediaUrl !== "string") {
       throw new Error("لم يؤكد الخادم بيانات الملف المرفوع.");
     }
-    return confirmed as ConfirmedMediaUpload;
+    return {
+      mediaUrl: confirmed.mediaUrl,
+      publicId: confirmed.publicId,
+      mediaType: confirmed.mediaType,
+    };
   } catch (confirmError) {
     const cleanedUp = await cleanupFailedUpload(uploadData.publicId, uploadData.secureUrl);
     const errorMessage = confirmError instanceof Error

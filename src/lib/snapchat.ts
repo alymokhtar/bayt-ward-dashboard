@@ -2,11 +2,11 @@ import { createCipheriv, randomBytes } from "node:crypto";
 import { decryptSnapchatToken, encryptSnapchatToken } from "@/lib/meta-token";
 import { cloudinary } from "@/lib/cloudinary";
 import { prisma } from "@/lib/prisma";
+import { SNAPCHAT_MAX_MEDIA_BYTES } from "@/lib/platform-rules";
 
 const SNAPCHAT_API = "https://businessapi.snapchat.com";
 const SNAPCHAT_AUTH = "https://accounts.snapchat.com/login/oauth2";
 const SNAPCHAT_AUTHORIZE_URL = "https://accounts.snapchat.com/login/oauth2/authorize";
-const SNAPCHAT_MAX_MEDIA_SIZE = 100 * 1024 * 1024;
 const SNAPCHAT_CHUNK_SIZE = 32 * 1024 * 1024;
 
 type SnapEnvelope = {
@@ -257,8 +257,8 @@ async function readCloudinaryMedia(mediaUrl: string, mediaType: "image" | "video
     throw new Error("قصص Snapchat تدعم صور JPG أو PNG في لوحة التحكم.");
   }
   const declaredSize = Number(response.headers.get("content-length"));
-  if (declaredSize > SNAPCHAT_MAX_MEDIA_SIZE) {
-    throw new Error("حد حجم وسائط Snapchat في لوحة التحكم هو 100 ميجابايت.");
+  if (declaredSize > SNAPCHAT_MAX_MEDIA_BYTES) {
+    throw new Error("حد حجم وسائط Snapchat في لوحة التحكم هو 100 MiB.");
   }
   if (!response.body) throw new Error("تعذّر قراءة ملف الوسائط.");
 
@@ -270,8 +270,8 @@ async function readCloudinaryMedia(mediaUrl: string, mediaType: "image" | "video
       const { done, value } = await reader.read();
       if (done) break;
       size += value.byteLength;
-      if (size > SNAPCHAT_MAX_MEDIA_SIZE) {
-        throw new Error("حد حجم وسائط Snapchat في لوحة التحكم هو 100 ميجابايت.");
+      if (size > SNAPCHAT_MAX_MEDIA_BYTES) {
+        throw new Error("حد حجم وسائط Snapchat في لوحة التحكم هو 100 MiB.");
       }
       chunks.push(Buffer.from(value));
     }

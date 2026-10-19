@@ -8,6 +8,8 @@ import { TikTokPublishError, uploadTikTokVideo } from "@/lib/tiktok";
 import { publishSnapchatContent, SnapchatPublishError } from "@/lib/snapchat";
 import { prisma } from "@/lib/prisma";
 import { FACEBOOK_PAGE_ID } from "@/constants/socials";
+import { cloudinary } from "@/lib/cloudinary";
+import { mimeTypeFromCloudinaryResource, validatePlatformMedia } from "@/lib/platform-rules";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -33,6 +35,37 @@ function originIsValid(request: Request) {
 function sanitizeError(error: unknown, accessToken?: string) {
   const message = error instanceof Error ? error.message : "تعذّر النشر على المنصة.";
   return message.replaceAll(accessToken ?? "\0", "[محجوب]").slice(0, 1000);
+}
+
+async function assertPlatformMediaValid(
+  post: {
+    cloudinaryPublicId: string;
+    mediaType: string;
+    snapchatContentType: string;
+  },
+  platform: Platform,
+) {
+  const mediaType = post.mediaType === "video" ? "video" : "image";
+  const resource = await cloudinary.api.resource(post.cloudinaryPublicId, {
+    resource_type: mediaType,
+  });
+  if (typeof resource.bytes !== "number" || !Number.isSafeInteger(resource.bytes) || resource.bytes <= 0) {
+    throw new Error(`${platform}: تعذّر التحقق من حجم الوسائط.`);
+  }
+  const mimeType = mimeTypeFromCloudinaryResource(resource.resource_type, resource.format);
+  if (!mimeType) throw new Error(`${platform}: صيغة الملف المحفوظ غير مدعومة.`);
+
+  const validation = validatePlatformMedia({
+    mimeType,
+    fileSize: resource.bytes,
+    platforms: [platform],
+    width: resource.width,
+    height: resource.height,
+    durationSeconds: resource.duration,
+    snapchatContentType: post.snapchatContentType === "SPOTLIGHT" ? "SPOTLIGHT" : "STORY",
+  });
+  const issues = [...validation.errors, ...validation.pending];
+  if (issues.length > 0) throw new Error(issues.join(" "));
 }
 
 function toSavedPost(post: {
@@ -256,6 +289,8 @@ export async function POST(
   const results = await Promise.allSettled(pendingTargets.map(async (platform) => {
     let publishedId: string;
     try {
+      await assertPlatformMediaValid(post, platform);
+
       if (platform === "youtube") {
         if (post.mediaType !== "video") throw new Error("YouTube publishing requires a video.");
         if (!post.youtubeTitle.trim()) throw new Error("YouTube video title is missing.");
@@ -288,6 +323,7 @@ export async function POST(
         }
         const uploaded = await uploadTikTokVideo({
           mediaUrl: post.mediaUrl,
+          mediaPublicId: post.cloudinaryPublicId,
           caption: post.caption,
           privacyLevel: post.tiktokPrivacyLevel,
         });

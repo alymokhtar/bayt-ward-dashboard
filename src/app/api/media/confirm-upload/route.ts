@@ -1,7 +1,7 @@
 import { NextResponse } from "next/server";
 import { isAdminAuthenticated } from "@/lib/admin-auth";
 import { cloudinary } from "@/lib/cloudinary";
-import { getMediaUploadPolicy } from "@/lib/media-upload-policy";
+import { getMediaUploadPolicy, mimeTypeFromCloudinaryResource, validatePlatformMedia, type SnapchatContentType } from "@/lib/platform-rules";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -52,27 +52,48 @@ export async function POST(request: Request) {
   const mimeType = input.mimeType;
   const fileSize = input.fileSize;
   const platforms = input.platforms;
+  const snapchatContentType = input.snapchatContentType;
   if (typeof publicId !== "string" ||
     !new RegExp(`^${UPLOAD_FOLDER}/[0-9a-f-]{36}$`, "i").test(publicId) ||
     typeof mimeType !== "string" || !Number.isSafeInteger(fileSize) ||
     typeof fileSize !== "number" || fileSize <= 0 ||
     !Array.isArray(platforms) || platforms.length === 0 ||
     platforms.length > ALLOWED_PLATFORMS.size ||
-    !platforms.every((platform) => typeof platform === "string" && ALLOWED_PLATFORMS.has(platform))) {
+    !platforms.every((platform) => typeof platform === "string" && ALLOWED_PLATFORMS.has(platform)) ||
+    (snapchatContentType !== undefined && snapchatContentType !== "STORY" && snapchatContentType !== "SPOTLIGHT")) {
     return jsonError("بيانات الملف المرفوع غير صالحة.", 400);
   }
 
-  const policy = getMediaUploadPolicy(mimeType, platforms as string[]);
+  const policy = getMediaUploadPolicy(
+    mimeType,
+    platforms as string[],
+    snapchatContentType as SnapchatContentType | undefined,
+  );
   if (!policy) {
-    return jsonError("الملف يتجاوز حدود النوع أو الحجم للمنصات المختارة.", 400);
+    const validation = validatePlatformMedia({
+      mimeType,
+      fileSize,
+      platforms: platforms as string[],
+      snapchatContentType: (snapchatContentType ?? "STORY") as SnapchatContentType,
+    });
+    return jsonError(
+      validation.errors[0] ?? "نوع الملف لا يتوافق مع المنصات المحددة.",
+      400,
+    );
   }
   if (fileSize > policy.maxBytes) {
+    const validation = validatePlatformMedia({
+      mimeType,
+      fileSize,
+      platforms: platforms as string[],
+      snapchatContentType: (snapchatContentType ?? "STORY") as SnapchatContentType,
+    });
     try {
       const removed = await removeInvalidUpload(publicId, policy.mediaType);
       return jsonError(
-        removed
-          ? "حجم الملف يتجاوز الحد المسموح وتم تنظيفه من Cloudinary."
-          : "حجم الملف يتجاوز الحد المسموح، لكن تعذّر تنظيفه من Cloudinary.",
+        `${validation.errors[0] ?? "حجم الملف يتجاوز حد المنصات المحددة."} ${
+          removed ? "تم تنظيف الملف من Cloudinary." : "تعذّر تنظيف الملف من Cloudinary."
+        }`,
         422,
       );
     } catch {
@@ -90,8 +111,23 @@ export async function POST(request: Request) {
   }
 
   const format = typeof resource.format === "string" ? resource.format.toLowerCase() : "";
+  const actualMimeType = mimeTypeFromCloudinaryResource(resource.resource_type, format);
+  if (!actualMimeType) {
+    try {
+      const removed = await removeInvalidUpload(publicId, policy.mediaType);
+      return jsonError(
+        removed
+          ? "صيغة الملف التي رُفعت إلى Cloudinary غير مدعومة. تم تنظيف الملف."
+          : "صيغة الملف التي رُفعت إلى Cloudinary غير مدعومة، وتعذّر تنظيف الملف.",
+        422,
+      );
+    } catch {
+      return jsonError("صيغة الملف التي رُفعت إلى Cloudinary غير مدعومة، وتعذّر تنظيف الملف.", 422);
+    }
+  }
   const validUpload = resource.public_id === publicId &&
     resource.resource_type === policy.mediaType &&
+    actualMimeType === mimeType &&
     typeof resource.bytes === "number" &&
     resource.bytes > 0 &&
     resource.bytes <= policy.maxBytes &&
@@ -111,6 +147,34 @@ export async function POST(request: Request) {
     } catch {
       return jsonError("رفض الخادم الملف بعد التحقق، وتعذّر تنظيفه من Cloudinary.", 422);
     }
+  }
+
+  const validation = validatePlatformMedia({
+      mimeType: actualMimeType,
+      fileSize: resource.bytes,
+      platforms: platforms as ("facebook" | "instagram" | "tiktok" | "youtube" | "snapchat")[],
+      width: resource.width,
+      height: resource.height,
+      durationSeconds: resource.duration,
+      snapchatContentType: (snapchatContentType ?? "STORY") as SnapchatContentType,
+  });
+  if (validation.errors.length > 0 || validation.pending.length > 0) {
+      try {
+        const removed = await removeInvalidUpload(publicId, policy.mediaType);
+        return jsonError(
+          [...validation.errors, ...validation.pending].join(" ") +
+            (removed
+              ? " تم تنظيف الملف من Cloudinary."
+              : " وتعذّر تنظيف الملف من Cloudinary."),
+          422,
+        );
+      } catch {
+        return jsonError(
+          [...validation.errors, ...validation.pending].join(" ") +
+            " وتعذّر تنظيف الملف من Cloudinary.",
+          422,
+        );
+      }
   }
 
   return NextResponse.json({

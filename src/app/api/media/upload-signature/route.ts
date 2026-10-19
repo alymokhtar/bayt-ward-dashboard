@@ -2,7 +2,7 @@ import { randomUUID } from "node:crypto";
 import { NextResponse } from "next/server";
 import { isAdminAuthenticated } from "@/lib/admin-auth";
 import { cloudinary } from "@/lib/cloudinary";
-import { getMediaUploadPolicy } from "@/lib/media-upload-policy";
+import { getMediaUploadPolicy, validatePlatformMedia, type SnapchatContentType } from "@/lib/platform-rules";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -44,19 +44,29 @@ export async function POST(request: Request) {
   const mimeType = input.mimeType;
   const fileSize = input.fileSize;
   const platforms = input.platforms;
+  const snapchatContentType = input.snapchatContentType;
   if (typeof mimeType !== "string" || !Number.isSafeInteger(fileSize) ||
     typeof fileSize !== "number" || !Array.isArray(platforms) ||
     platforms.length === 0 || platforms.length > ALLOWED_PLATFORMS.size ||
-    !platforms.every((platform) => typeof platform === "string" && ALLOWED_PLATFORMS.has(platform))) {
+    !platforms.every((platform) => typeof platform === "string" && ALLOWED_PLATFORMS.has(platform)) ||
+    (snapchatContentType !== undefined && snapchatContentType !== "STORY" && snapchatContentType !== "SPOTLIGHT")) {
     return jsonError("تحققي من نوع الملف وحجمه والمنصات المختارة.", 400);
   }
 
-  const policy = getMediaUploadPolicy(mimeType, platforms as string[]);
+  const policy = getMediaUploadPolicy(
+    mimeType,
+    platforms as string[],
+    snapchatContentType as SnapchatContentType | undefined,
+  );
   if (!policy || fileSize <= 0 || fileSize > policy.maxBytes) {
+    const validation = validatePlatformMedia({
+      mimeType,
+      fileSize,
+      platforms: platforms as string[],
+      snapchatContentType: (snapchatContentType ?? "STORY") as SnapchatContentType,
+    });
     return jsonError(
-      policy?.mediaType === "video"
-        ? "حجم الفيديو يتجاوز الحد المسموح للمنصات المختارة."
-        : "نوع الصورة أو حجمها غير مدعوم.",
+      validation.errors[0] ?? "نوع الملف لا يتوافق مع المنصات المحددة.",
       400,
     );
   }
@@ -71,7 +81,7 @@ export async function POST(request: Request) {
   const timestamp = Math.floor(Date.now() / 1000);
   const publicId = `${UPLOAD_FOLDER}/${randomUUID()}`;
   const params = {
-    allowed_formats: policy.allowedFormats.join(","),
+    allowed_formats: policy.allowedFormats,
     overwrite: false,
     public_id: publicId,
     tags: "temporary",

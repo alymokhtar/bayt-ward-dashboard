@@ -3,7 +3,7 @@
 import { cloudinary } from "@/lib/cloudinary";
 import { prisma } from "@/lib/prisma";
 import { isAdminAuthenticated } from "@/lib/admin-auth";
-import { getMediaUploadPolicy, MEDIA_UPLOAD_FORMATS } from "@/lib/media-upload-policy";
+import { mimeTypeFromCloudinaryResource, validatePlatformMedia } from "@/lib/platform-rules";
 import { isTikTokPrivacyLevel } from "@/lib/tiktok-privacy";
 
 const ALLOWED_PLATFORMS = new Set(["facebook", "instagram", "tiktok", "youtube", "snapchat"]);
@@ -144,12 +144,7 @@ export async function createPost(input: CreatePostInput): Promise<CreatePostResu
   }
 
   const format = typeof verifiedMedia.format === "string" ? verifiedMedia.format.toLowerCase() : "";
-  const verifiedMimeType = Object.entries(MEDIA_UPLOAD_FORMATS).find(([mimeType, formats]) =>
-    mimeType.startsWith(`${mediaType}/`) && formats.includes(format),
-  )?.[0];
-  const mediaPolicy = verifiedMimeType
-    ? getMediaUploadPolicy(verifiedMimeType, platforms)
-    : null;
+  const verifiedMimeType = mimeTypeFromCloudinaryResource(verifiedMedia.resource_type, format);
   if (verifiedMedia.public_id !== cloudinaryPublicId ||
     verifiedMedia.resource_type !== mediaType ||
     verifiedMedia.secure_url !== mediaUrl ||
@@ -157,9 +152,23 @@ export async function createPost(input: CreatePostInput): Promise<CreatePostResu
     (verifiedMedia.folder && verifiedMedia.folder !== "bayt-ward-dashboard") ||
     typeof verifiedMedia.bytes !== "number" ||
     verifiedMedia.bytes <= 0 ||
-    !mediaPolicy ||
-    verifiedMedia.bytes > mediaPolicy.maxBytes) {
+    !verifiedMimeType) {
     return { success: false, error: "بيانات الوسائط لا تطابق الملف المرفوع أو حدود النوع والحجم." };
+  }
+  const mediaValidation = validatePlatformMedia({
+    mimeType: verifiedMimeType,
+    fileSize: verifiedMedia.bytes,
+    platforms,
+    width: verifiedMedia.width,
+    height: verifiedMedia.height,
+    durationSeconds: verifiedMedia.duration,
+    snapchatContentType,
+  });
+  if (mediaValidation.errors.length > 0 || mediaValidation.pending.length > 0) {
+    return {
+      success: false,
+      error: [...mediaValidation.errors, ...mediaValidation.pending].join(" "),
+    };
   }
 
   if (platforms.includes("tiktok") && mediaType !== "video") {
