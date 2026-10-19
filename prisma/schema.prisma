@@ -24,6 +24,7 @@ model Post {
   platforms            Json        @default("[]")
   mediaType            String      @default("image") @db.VarChar(10)
   mediaTransformMode   String      @default("FIT") @db.VarChar(10)
+  mediaDurationSeconds Float?
   status               PostStatus  @default(PENDING)
   facebookStatus       PostStatus?
   instagramStatus      PostStatus?

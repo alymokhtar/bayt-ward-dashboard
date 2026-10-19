@@ -40,10 +40,12 @@ function sanitizeError(error: unknown, accessToken?: string) {
 
 async function assertPlatformMediaValid(
   post: {
+    id: string;
     cloudinaryPublicId: string;
     mediaType: string;
     mediaTransformMode: string;
     snapchatContentType: string;
+    mediaDurationSeconds: number | null;
   },
   platform: Platform,
 ) {
@@ -60,19 +62,38 @@ async function assertPlatformMediaValid(
     throw new Error(`${platform}: رابط الوسائط الآمن من Cloudinary غير صالح.`);
   }
 
+  const cloudinaryDuration = typeof resource.duration === "number" &&
+    Number.isFinite(resource.duration) &&
+    resource.duration > 0
+    ? resource.duration
+    : null;
+  let storedDuration = post.mediaDurationSeconds;
+  if (cloudinaryDuration !== null && cloudinaryDuration !== post.mediaDurationSeconds) {
+    await prisma.post.update({
+      where: { id: post.id },
+      data: { mediaDurationSeconds: cloudinaryDuration },
+    });
+    storedDuration = cloudinaryDuration;
+  } else if (cloudinaryDuration === null && storedDuration === null) {
+    const latestPost = await prisma.post.findUnique({
+      where: { id: post.id },
+      select: { mediaDurationSeconds: true },
+    });
+    storedDuration = latestPost?.mediaDurationSeconds ?? null;
+  }
+  const durationSeconds = cloudinaryDuration ?? storedDuration;
+
   const validation = validatePlatformMedia({
     mimeType,
     fileSize: resource.bytes,
     platforms: [platform],
     width: resource.width,
     height: resource.height,
-    durationSeconds: resource.duration,
+    durationSeconds,
     snapchatContentType: post.snapchatContentType === "SPOTLIGHT" ? "SPOTLIGHT" : "STORY",
     sourceAsset: true,
     allowPendingVideoDuration: mediaType === "video" &&
-      !(typeof resource.duration === "number" &&
-        Number.isFinite(resource.duration) &&
-        resource.duration > 0) &&
+      durationSeconds === null &&
       resource.secure_url.startsWith("https://res.cloudinary.com/"),
   });
   const issues = [...validation.errors, ...validation.pending];
@@ -81,6 +102,7 @@ async function assertPlatformMediaValid(
     mimeType,
     fileSize: resource.bytes,
     originalUrl: resource.secure_url,
+    durationSeconds,
   };
 }
 
@@ -91,6 +113,7 @@ function toSavedPost(post: {
   cloudinaryPublicId: string;
   mediaType: string;
   mediaTransformMode: string;
+  mediaDurationSeconds: number | null;
   platforms: unknown;
   status: PostStatus;
   facebookStatus: PostStatus | null;
@@ -490,6 +513,7 @@ export async function POST(
           mediaPublicId: post.cloudinaryPublicId,
           caption: post.caption,
           privacyLevel: post.tiktokPrivacyLevel,
+          durationSeconds: sourceMedia.durationSeconds,
         });
         try {
           await prisma.post.update({

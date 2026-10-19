@@ -24,6 +24,7 @@ export default async function Home() {
           platforms: true,
           mediaType: true,
           mediaTransformMode: true,
+          mediaDurationSeconds: true,
           status: true,
           facebookStatus: true,
           instagramStatus: true,

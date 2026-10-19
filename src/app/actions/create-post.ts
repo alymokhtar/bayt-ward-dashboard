@@ -34,6 +34,7 @@ export type SavedPost = {
   platforms: string[];
   mediaType: "image" | "video";
   mediaTransformMode: MediaTransformMode;
+  mediaDurationSeconds: number | null;
   status: "PENDING" | "PUBLISHING" | "PUBLISHED" | "FAILED" | "UNKNOWN";
   facebookStatus: "PENDING" | "PUBLISHING" | "PUBLISHED" | "FAILED" | "UNKNOWN" | null;
   instagramStatus: "PENDING" | "PUBLISHING" | "PUBLISHED" | "FAILED" | "UNKNOWN" | null;
@@ -223,6 +224,11 @@ export async function createPost(input: CreatePostInput): Promise<CreatePostResu
         platforms,
         mediaType,
         mediaTransformMode,
+        mediaDurationSeconds: typeof verifiedMedia.duration === "number" &&
+          Number.isFinite(verifiedMedia.duration) &&
+          verifiedMedia.duration > 0
+          ? verifiedMedia.duration
+          : null,
         ...(platforms.includes("facebook") ? { facebookStatus: "PENDING" as const } : {}),
         ...(platforms.includes("instagram") ? { instagramStatus: "PENDING" as const } : {}),
         ...(platforms.includes("tiktok")
@@ -262,6 +268,7 @@ export async function createPost(input: CreatePostInput): Promise<CreatePostResu
         platforms,
         mediaType,
         mediaTransformMode,
+        mediaDurationSeconds: post.mediaDurationSeconds,
         status: post.status,
         facebookStatus: post.facebookStatus,
         instagramStatus: post.instagramStatus,

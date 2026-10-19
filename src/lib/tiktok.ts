@@ -169,6 +169,7 @@ export async function uploadTikTokVideo(input: {
   mediaPublicId: string;
   caption: string;
   privacyLevel: string;
+  durationSeconds: number | null;
 }) {
   if (input.caption.length > 2200) {
     throw new Error("TikTok captions cannot exceed 2,200 UTF-16 code units.");
@@ -191,11 +192,17 @@ export async function uploadTikTokVideo(input: {
   }
   const mediaMimeType = mimeTypeFromCloudinaryResource(mediaResource.resource_type, mediaResource.format);
   if (!mediaMimeType) throw new Error("TikTok يتطلب فيديو بصيغة MP4 أو MOV أو WebM.");
+  const cloudinaryDuration = typeof mediaResource.duration === "number" &&
+    Number.isFinite(mediaResource.duration) &&
+    mediaResource.duration > 0
+    ? mediaResource.duration
+    : null;
+  const durationSeconds = cloudinaryDuration ?? input.durationSeconds;
   const mediaValidation = validatePlatformMedia({
     mimeType: mediaMimeType,
     fileSize: mediaResource.bytes,
     platforms: ["tiktok"],
-    durationSeconds: mediaResource.duration,
+    durationSeconds,
     tiktokMaxDurationSeconds: creator.maxVideoPostDurationSeconds,
   });
   if (mediaValidation.errors.length > 0 || mediaValidation.pending.length > 0) {
