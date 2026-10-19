@@ -34,8 +34,14 @@ export type ConfirmedMediaUpload = {
   mediaType: "image" | "video";
 };
 
+class VideoMetadataPendingError extends Error {}
+
 async function responseError(response: Response, fallback: string) {
   const body: unknown = await response.json().catch(() => null);
+  return responseErrorMessage(body, fallback);
+}
+
+function responseErrorMessage(body: unknown, fallback: string) {
   if (!body || typeof body !== "object") return fallback;
 
   const error = "error" in body && typeof body.error === "string"
@@ -243,23 +249,45 @@ export async function uploadMediaDirectly(
   }
 
   try {
-    const confirmResponse = await fetch("/api/media/confirm-upload", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      cache: "no-store",
-      body: JSON.stringify({
-        publicId: uploadData.publicId,
-        mimeType: file.type,
-        fileSize: file.size,
-        platforms,
-        snapchatContentType,
-      }),
+    const confirmationBody = JSON.stringify({
+      publicId: uploadData.publicId,
+      mimeType: file.type,
+      fileSize: file.size,
+      platforms,
+      snapchatContentType,
     });
-    if (!confirmResponse.ok) {
-      throw new Error(await responseError(confirmResponse, "تعذّر التحقق من الملف المرفوع."));
+    let confirmed: unknown;
+    let confirmationResponse: Response | undefined;
+    for (let attempt = 0; attempt < 6; attempt += 1) {
+      confirmationResponse = await fetch("/api/media/confirm-upload", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        cache: "no-store",
+        body: confirmationBody,
+      });
+      confirmed = await confirmationResponse.json().catch(() => null);
+      if (!confirmationResponse.ok) {
+        const isRetryable = confirmed && typeof confirmed === "object" &&
+          "retryable" in confirmed && confirmed.retryable === true;
+        if (isRetryable && attempt < 5) {
+          await new Promise((resolve) => setTimeout(resolve, Math.min(1000 * 2 ** attempt, 5000)));
+          continue;
+        }
+        if (isRetryable) {
+          throw new VideoMetadataPendingError(
+            responseErrorMessage(
+              confirmed,
+              "ما زال Cloudinary يجهّز بيانات الفيديو. انتظري قليلاً ثم أعيدي المحاولة.",
+            ),
+          );
+        }
+        throw new Error(responseErrorMessage(confirmed, "تعذّر التحقق من الملف المرفوع."));
+      }
+      break;
     }
-
-    const confirmed: unknown = await confirmResponse.json();
+    if (!confirmationResponse?.ok) {
+      throw new Error("تعذّر التحقق من الملف المرفوع.");
+    }
     if (!confirmed || typeof confirmed !== "object" ||
       !("success" in confirmed) || confirmed.success !== true ||
       !("publicId" in confirmed) || confirmed.publicId !== uploadData.publicId ||
@@ -275,6 +303,9 @@ export async function uploadMediaDirectly(
       mediaType: confirmed.mediaType,
     };
   } catch (confirmError) {
+    if (confirmError instanceof VideoMetadataPendingError) {
+      throw confirmError;
+    }
     const cleanedUp = await cleanupFailedUpload(uploadData.publicId, uploadData.secureUrl);
     const errorMessage = confirmError instanceof Error
       ? confirmError.message

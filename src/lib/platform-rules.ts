@@ -242,7 +242,9 @@ export function validatePlatformMedia(input: PlatformMediaMetadata): PlatformVal
         : rule.maxDurationSeconds;
 
     if (minimumDuration != null || maximumDuration != null) {
-      if (input.durationSeconds == null || !Number.isFinite(input.durationSeconds)) {
+      if (input.durationSeconds == null ||
+        !Number.isFinite(input.durationSeconds) ||
+        input.durationSeconds <= 0) {
         pending.push(`${platformName(platform)}: انتظري حتى تكتمل قراءة مدة الفيديو.`);
       } else {
         if (minimumDuration != null && input.durationSeconds < minimumDuration) {

@@ -8,6 +8,8 @@ export const dynamic = "force-dynamic";
 
 const UPLOAD_FOLDER = "bayt-ward-dashboard";
 const ALLOWED_PLATFORMS = new Set(["facebook", "instagram", "tiktok", "youtube", "snapchat"]);
+const VIDEO_METADATA_ATTEMPTS = 4;
+const VIDEO_METADATA_RETRY_DELAY_MS = 750;
 
 type ValidationDetails = {
   errors: string[];
@@ -29,6 +31,18 @@ function jsonValidationError(message: string, status: number, details: Validatio
     { error: message, validationDetails: details },
     { status, headers: { "Cache-Control": "no-store" } },
   );
+}
+
+function jsonProcessingResponse(message: string, details: ValidationDetails) {
+  console.warn("[media/confirm-upload] video metadata is still processing", details);
+  return NextResponse.json(
+    { error: message, retryable: true, processing: true, validationDetails: details },
+    { status: 202, headers: { "Cache-Control": "no-store", "Retry-After": "2" } },
+  );
+}
+
+function wait(milliseconds: number) {
+  return new Promise((resolve) => setTimeout(resolve, milliseconds));
 }
 
 function originIsValid(request: Request) {
@@ -155,15 +169,77 @@ export async function POST(request: Request) {
     );
   }
 
-  let resource;
-  try {
-    resource = await cloudinary.api.resource(publicId, {
-      resource_type: policy.mediaType,
+  const requiresVideoDuration = policy.mediaType === "video" &&
+    platforms.some((platform) =>
+      platform === "instagram" || platform === "facebook" ||
+      platform === "youtube" || platform === "snapchat",
+    );
+  let resource: Awaited<ReturnType<typeof cloudinary.api.resource>> | undefined;
+  let resourceLookupError: unknown;
+  let videoMetadataPending = false;
+  let resourceMetadataIsValid = false;
+  const attempts = policy.mediaType === "video" ? VIDEO_METADATA_ATTEMPTS : 1;
+
+  for (let attempt = 0; attempt < attempts; attempt += 1) {
+    try {
+      resource = await cloudinary.api.resource(publicId, {
+        resource_type: policy.mediaType,
+      });
+      resourceLookupError = undefined;
+    } catch (error) {
+      resource = undefined;
+      resourceLookupError = error;
+    }
+
+    if (resource) {
+      const resourceFormat = typeof resource.format === "string" ? resource.format.toLowerCase() : "";
+      const resourceMimeType = mimeTypeFromCloudinaryResource(resource.resource_type, resourceFormat);
+      resourceMetadataIsValid = resource.public_id === publicId &&
+        resource.resource_type === policy.mediaType &&
+        resourceMimeType === mimeType &&
+        typeof resource.bytes === "number" &&
+        Number.isSafeInteger(resource.bytes) &&
+        resource.bytes > 0 &&
+        resource.bytes <= policy.maxBytes &&
+        policy.allowedFormats.includes(resourceFormat) &&
+        resource.secure_url.startsWith("https://res.cloudinary.com/") &&
+        (!resource.folder || resource.folder === UPLOAD_FOLDER);
+      videoMetadataPending = requiresVideoDuration &&
+        (typeof resource.duration !== "number" ||
+          !Number.isFinite(resource.duration) ||
+          resource.duration <= 0);
+
+      if (resourceMetadataIsValid && videoMetadataPending && attempt < attempts - 1) {
+        await wait(VIDEO_METADATA_RETRY_DELAY_MS * (attempt + 1));
+        continue;
+      }
+    }
+
+    if (resource || attempt === attempts - 1) break;
+    await wait(VIDEO_METADATA_RETRY_DELAY_MS * (attempt + 1));
+  }
+
+  if (!resource && policy.mediaType === "video") {
+    const errorName = resourceLookupError instanceof Error
+      ? resourceLookupError.name
+      : "UnknownError";
+    console.warn("[media/confirm-upload] Cloudinary video metadata is not available yet", {
+      name: errorName,
+      platforms: platforms.join(","),
     });
-  } catch (cloudinaryError) {
+    return jsonProcessingResponse(
+      "ما زال Cloudinary يجهّز بيانات الفيديو. سيُعاد التحقق تلقائياً بعد لحظات.",
+      {
+        errors: [],
+        pending: ["جاري تجهيز بيانات الفيديو من Cloudinary."],
+        warnings: [],
+        metadata: { mediaType: policy.mediaType, platforms: platforms.join(",") },
+      },
+    );
+  }
+  if (!resource) {
     console.error("[media/confirm-upload] failed to load uploaded asset metadata", {
-      name: cloudinaryError instanceof Error ? cloudinaryError.name : "UnknownError",
-      message: cloudinaryError instanceof Error ? cloudinaryError.message : "Unknown Cloudinary error",
+      name: resourceLookupError instanceof Error ? resourceLookupError.name : "UnknownError",
       mediaType: policy.mediaType,
       platforms: platforms.join(","),
     });
@@ -175,6 +251,22 @@ export async function POST(request: Request) {
         pending: [],
         warnings: [],
         metadata: { mediaType: policy.mediaType, platforms: platforms.join(",") },
+      },
+    );
+  }
+
+  if (resourceMetadataIsValid && videoMetadataPending) {
+    return jsonProcessingResponse(
+      "ما زال Cloudinary يجهّز مدة الفيديو. سيُعاد التحقق تلقائياً بعد لحظات.",
+      {
+        errors: [],
+        pending: ["مدة الفيديو غير متاحة بعد من Cloudinary."],
+        warnings: [],
+        metadata: {
+          mediaType: policy.mediaType,
+          platforms: platforms.join(","),
+          durationSeconds: resource.duration ?? null,
+        },
       },
     );
   }
