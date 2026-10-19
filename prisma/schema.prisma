@@ -55,6 +55,7 @@ model Post {
   snapchatStoryId      String?     @db.Text
   snapchatSpotlightId  String?     @db.Text
   snapchatError        String?     @db.Text
+  publishingStartedAt  DateTime?
   createdAt            DateTime    @default(now())
 }
 

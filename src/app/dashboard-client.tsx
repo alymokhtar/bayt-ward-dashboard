@@ -227,13 +227,15 @@ function StatusPill({ status }: { status: SavedPost["status"] }) {
   );
 }
 
-function HistorySection({ posts, databaseAvailable, searchTerm, onDelete, onRetryPublish, retryingPostId, deletingPostId, actionError, actionNotice }: {
+function HistorySection({ posts, databaseAvailable, searchTerm, onDelete, onRetryPublish, onRetryPlatform, retryingPostId, retryingPlatform, deletingPostId, actionError, actionNotice }: {
   posts: SavedPost[];
   databaseAvailable: boolean;
   searchTerm: string;
   onDelete: (post: SavedPost) => void;
   onRetryPublish: (post: SavedPost) => void;
+  onRetryPlatform: (post: SavedPost, platform: "facebook" | "instagram" | "tiktok" | "youtube" | "snapchat") => void;
   retryingPostId: string | null;
+  retryingPlatform: string | null;
   deletingPostId: string | null;
   actionError: string;
   actionNotice: string;
@@ -310,6 +312,16 @@ function HistorySection({ posts, databaseAvailable, searchTerm, onDelete, onRetr
                               <> · <a href={post.tiktokVideoUrl} target="_blank" rel="noreferrer" className="font-semibold text-[#286355] underline">مشاهدة الفيديو</a></>
                             ) : null}
                             {error ? <span className="block text-[#a44f46]">{error}</span> : null}
+                            {status === "FAILED" ? (
+                              <button
+                                type="button"
+                                onClick={() => onRetryPlatform(post, platform)}
+                                disabled={retryingPlatform === `${post.id}:${platform}`}
+                                className="mr-2 inline-flex rounded-md border border-[#e9e7e0] px-2 py-0.5 text-[10px] font-semibold text-[#53645a] hover:bg-[#f8f7f3] disabled:opacity-50"
+                              >
+                                {retryingPlatform === `${post.id}:${platform}` ? "جارٍ الجدولة..." : "إعادة محاولة هذه المنصة"}
+                              </button>
+                            ) : null}
                           </p>
                         );
                       })}
@@ -392,9 +404,11 @@ export default function DashboardClient({ initialPosts, initialStats, databaseAv
   const [searchTerm, setSearchTerm] = useState("");
   const [deletingPostId, setDeletingPostId] = useState<string | null>(null);
   const [retryingPostId, setRetryingPostId] = useState<string | null>(null);
+  const [retryingPlatform, setRetryingPlatform] = useState<string | null>(null);
   const [historyError, setHistoryError] = useState("");
   const [historyNotice, setHistoryNotice] = useState("");
   const tiktokPollInProgress = useRef(false);
+  const publishPollInProgress = useRef(false);
   const isDarkMode = useSyncExternalStore(subscribeToTheme, getThemeSnapshot, getServerThemeSnapshot);
   const inputRef = useRef<HTMLInputElement>(null);
   const searchInputRef = useRef<HTMLInputElement>(null);
@@ -537,6 +551,67 @@ export default function DashboardClient({ initialPosts, initialStats, databaseAv
     };
   }, [posts]);
 
+  useEffect(() => {
+    const hasActivePublish = posts.some((post) =>
+      (post.facebookStatus === "PUBLISHING" || post.instagramStatus === "PUBLISHING" ||
+        post.tiktokStatus === "PUBLISHING" || post.youtubeStatus === "PUBLISHING" ||
+        post.snapchatStatus === "PUBLISHING"),
+    );
+    if (!hasActivePublish) return;
+
+    let cancelled = false;
+    const refreshPublishingPosts = async () => {
+      if (publishPollInProgress.current) return;
+      publishPollInProgress.current = true;
+      try {
+        const activePosts = posts.filter((post) =>
+          post.facebookStatus === "PUBLISHING" || post.instagramStatus === "PUBLISHING" ||
+          post.tiktokStatus === "PUBLISHING" || post.youtubeStatus === "PUBLISHING" ||
+          post.snapchatStatus === "PUBLISHING",
+        );
+        const updates = await Promise.all(activePosts.map(async (post) => {
+          const response = await fetch(`/api/posts/${encodeURIComponent(post.id)}/publish`, {
+            cache: "no-store",
+          });
+          if (!response.ok) return null;
+          const result: unknown = await response.json();
+          if (!result || typeof result !== "object" || !("post" in result) ||
+            !result.post || typeof result.post !== "object" || !("id" in result.post) ||
+            result.post.id !== post.id) return null;
+          return result.post as SavedPost;
+        }));
+        if (cancelled) return;
+        const refreshed = updates.filter((post): post is SavedPost => post !== null);
+        if (refreshed.length === 0) return;
+        const byId = new Map(refreshed.map((post) => [post.id, post]));
+        setPosts((current) => current.map((post) => byId.get(post.id) ?? post));
+        setStats((current) => refreshed.reduce((stats, next) => {
+          const previous = activePosts.find((post) => post.id === next.id);
+          if (!previous) return stats;
+          const wasPending = previous.status === "PENDING" || previous.status === "PUBLISHING";
+          const isPending = next.status === "PENDING" || next.status === "PUBLISHING";
+          return {
+            ...stats,
+            pending: Math.max(0, stats.pending + Number(isPending) - Number(wasPending)),
+            published: Math.max(0, stats.published + Number(next.status === "PUBLISHED") -
+              Number(previous.status === "PUBLISHED")),
+          };
+        }, current));
+      } catch {
+        // A later poll will retry transient status-fetch failures.
+      } finally {
+        publishPollInProgress.current = false;
+      }
+    };
+
+    void refreshPublishingPosts();
+    const timer = setInterval(() => void refreshPublishingPosts(), 3_000);
+    return () => {
+      cancelled = true;
+      clearInterval(timer);
+    };
+  }, [posts]);
+
   function toggleTheme() {
     const nextDarkMode = !document.documentElement.classList.contains("dark");
     document.documentElement.classList.toggle("dark", nextDarkMode);
@@ -653,11 +728,57 @@ export default function DashboardClient({ initialPosts, initialStats, databaseAv
           : "تعذّرت إعادة نشر المنشور.";
         throw new Error(message);
       }
-      setHistoryNotice("تم تحديث حالة محاولة النشر.");
+      setHistoryNotice("بدأت مهام النشر بشكل مستقل. ستُحدّث حالة كل منصة تلقائياً.");
     } catch (retryError) {
       setHistoryError(retryError instanceof Error ? retryError.message : "تعذّرت إعادة نشر المنشور.");
     } finally {
       setRetryingPostId(null);
+    }
+  }
+
+  async function handleRetryPlatform(
+    post: SavedPost,
+    platform: "facebook" | "instagram" | "tiktok" | "youtube" | "snapchat",
+  ) {
+    const retryKey = `${post.id}:${platform}`;
+    if (retryingPlatform) return;
+    setRetryingPlatform(retryKey);
+    setHistoryError("");
+    setHistoryNotice("");
+    try {
+      const response = await fetch(
+        `/api/posts/${encodeURIComponent(post.id)}/publish?platform=${encodeURIComponent(platform)}`,
+        { method: "POST" },
+      );
+      const result: unknown = await response.json();
+      const updatedPost = result && typeof result === "object" && "post" in result
+        ? result.post as SavedPost
+        : null;
+      if (!response.ok) {
+        const message = result && typeof result === "object" && "error" in result &&
+          typeof result.error === "string"
+          ? result.error
+          : `تعذّرت إعادة محاولة النشر على ${platform}.`;
+        throw new Error(message);
+      }
+      if (updatedPost) {
+        setPosts((current) => current.map((item) => item.id === post.id ? updatedPost : item));
+        setStats((current) => ({
+          ...current,
+          pending: Math.max(0, current.pending + Number(updatedPost.status === "PENDING" ||
+            updatedPost.status === "PUBLISHING") - Number(post.status === "PENDING" ||
+            post.status === "PUBLISHING")),
+          published: Math.max(0, current.published + Number(updatedPost.status === "PUBLISHED") -
+            Number(post.status === "PUBLISHED")),
+        }));
+      }
+      setHistoryNotice(`تمت جدولة إعادة المحاولة على ${platform} فقط.`);
+    } catch (retryError) {
+      setHistoryError(retryError instanceof Error
+        ? retryError.message
+        : `تعذّرت إعادة محاولة النشر على ${platform}.`);
+    } finally {
+      setRetryingPlatform(null);
     }
   }
 
@@ -886,7 +1007,7 @@ export default function DashboardClient({ initialPosts, initialStats, databaseAv
           } else if (savedPost.status === "PUBLISHED") {
             setNotice("تم نشر المنشور بنجاح على المنصات المحددة.");
           } else {
-            setNotice("تم حفظ المنشور. راجعي حالة النشر لكل منصة في سجل المنشورات.");
+            setNotice("تم حفظ المنشور وجدولة مهام النشر بشكل مستقل. ستتحدث حالة كل منصة تلقائياً.");
           }
         } catch {
           setError("حُفظ المنشور، لكن لم يصل ردّ النشر. تحققي من سجل المنشورات قبل إعادة المحاولة.");
@@ -1468,7 +1589,7 @@ export default function DashboardClient({ initialPosts, initialStats, databaseAv
               </aside>
             </div>
 
-            <HistorySection posts={filteredPosts} databaseAvailable={databaseAvailable} searchTerm={searchTerm} onDelete={handleDeletePost} onRetryPublish={handleRetryPublish} retryingPostId={retryingPostId} deletingPostId={deletingPostId} actionError={historyError} actionNotice={historyNotice} />
+            <HistorySection posts={filteredPosts} databaseAvailable={databaseAvailable} searchTerm={searchTerm} onDelete={handleDeletePost} onRetryPublish={handleRetryPublish} onRetryPlatform={handleRetryPlatform} retryingPostId={retryingPostId} retryingPlatform={retryingPlatform} deletingPostId={deletingPostId} actionError={historyError} actionNotice={historyNotice} />
             <footer id="social-links" className="px-1 py-7 text-center text-[10px] text-[#a2a39b]">
               <p>صُنع بكل حب في بيت ورد <span className="text-[#c47f78]">♥</span></p>
               <SocialLinks />

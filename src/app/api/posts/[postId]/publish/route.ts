@@ -1,5 +1,5 @@
 import { PostStatus } from "@prisma/client";
-import { NextResponse } from "next/server";
+import { after, NextResponse } from "next/server";
 import { isAdminAuthenticated } from "@/lib/admin-auth";
 import { decryptMetaToken } from "@/lib/meta-token";
 import { MetaGraphError, publishFacebookPost, publishInstagramPost } from "@/lib/meta-graph";
@@ -167,6 +167,107 @@ function currentStatus(post: {
   return PostStatus.PUBLISHED;
 }
 
+async function refreshPostStatus(postId: string) {
+  const post = await prisma.post.findUniqueOrThrow({
+    where: { id: postId },
+    select: {
+      status: true,
+      platforms: true,
+      facebookStatus: true,
+      instagramStatus: true,
+      tiktokStatus: true,
+      youtubeStatus: true,
+      snapchatStatus: true,
+    },
+  });
+  const status = currentStatus(post);
+  if (post.status === status) return;
+  await prisma.post.update({
+    where: { id: postId },
+    data: { status },
+  });
+}
+
+function platformStatusUpdate(
+  platform: Platform,
+  status: PostStatus,
+  error: string,
+  publishId?: string,
+) {
+  if (platform === "facebook") {
+    return { facebookStatus: status, facebookError: error, ...(publishId ? { facebookPostId: publishId } : {}) };
+  }
+  if (platform === "instagram") {
+    return { instagramStatus: status, instagramError: error, ...(publishId ? { instagramPostId: publishId } : {}) };
+  }
+  if (platform === "tiktok") {
+    return {
+      tiktokStatus: status,
+      tiktokError: error,
+      ...(publishId ? { tiktokPublishId: publishId } : {}),
+    };
+  }
+  if (platform === "youtube") {
+    return { youtubeStatus: status, youtubeError: error };
+  }
+  return { snapchatStatus: status, snapchatError: error };
+}
+
+export async function GET(
+  _request: Request,
+  { params }: RouteContext<"/api/posts/[postId]/publish">,
+) {
+  if (!(await isAdminAuthenticated())) return jsonError("يلزم تسجيل الدخول.", 401);
+  const { postId } = await params;
+  if (!/^[0-9a-f-]{36}$/i.test(postId)) return jsonError("معرّف المنشور غير صالح.", 400);
+  try {
+    let storedPost = await prisma.post.findUnique({ where: { id: postId } });
+    if (!storedPost) return jsonError("المنشور غير موجود.", 404);
+    const staleBefore = new Date(Date.now() - 6 * 60_000);
+    if (
+      storedPost.status === PostStatus.PUBLISHING &&
+      storedPost.publishingStartedAt &&
+      storedPost.publishingStartedAt <= staleBefore
+    ) {
+      const staleMessage = "انتهت مهلة مهمة النشر دون تسجيل نتيجة. تحققي من المنصة قبل أي إعادة نشر.";
+      await prisma.post.updateMany({
+        where: {
+          id: postId,
+          status: PostStatus.PUBLISHING,
+          publishingStartedAt: { lte: staleBefore },
+        },
+        data: {
+          ...(storedPost.facebookStatus === PostStatus.PUBLISHING
+            ? { facebookStatus: PostStatus.UNKNOWN, facebookError: staleMessage }
+            : {}),
+          ...(storedPost.instagramStatus === PostStatus.PUBLISHING
+            ? { instagramStatus: PostStatus.UNKNOWN, instagramError: staleMessage }
+            : {}),
+          ...(storedPost.tiktokStatus === PostStatus.PUBLISHING && !storedPost.tiktokPublishId
+            ? { tiktokStatus: PostStatus.UNKNOWN, tiktokError: staleMessage }
+            : {}),
+          ...(storedPost.youtubeStatus === PostStatus.PUBLISHING
+            ? { youtubeStatus: PostStatus.UNKNOWN, youtubeError: staleMessage }
+            : {}),
+          ...(storedPost.snapchatStatus === PostStatus.PUBLISHING
+            ? { snapchatStatus: PostStatus.UNKNOWN, snapchatError: staleMessage }
+            : {}),
+        },
+      });
+      storedPost = await prisma.post.findUnique({ where: { id: postId } });
+      if (!storedPost) return jsonError("المنشور غير موجود.", 404);
+    }
+    await refreshPostStatus(postId);
+    const post = await prisma.post.findUniqueOrThrow({ where: { id: postId } });
+    return NextResponse.json(
+      { post: toSavedPost(post) },
+      { headers: { "Cache-Control": "no-store" } },
+    );
+  } catch {
+    return jsonError("تعذّر تحميل حالة المنشور.", 503);
+  }
+}
+
 export async function POST(
   request: Request,
   { params }: RouteContext<"/api/posts/[postId]/publish">,
@@ -196,18 +297,23 @@ export async function POST(
   if (targets.length === 0) {
     return jsonError("لا يحتوي المنشور على منصة مدعومة للنشر المباشر.", 400);
   }
-  if (post.status === PostStatus.PUBLISHING) {
-    return jsonError("النشر قيد التنفيذ بالفعل.", 409);
+  const requestedPlatform = new URL(request.url).searchParams.get("platform");
+  if (requestedPlatform && !targets.includes(requestedPlatform as Platform)) {
+    return jsonError("المنصة المطلوبة غير موجودة ضمن هذا المنشور.", 400);
   }
 
-  const pendingTargets = targets.filter((platform) => isRetryable(
+  const eligibleTargets = targets.filter((platform) => isRetryable(
     platform === "facebook"
       ? post.facebookStatus
       : platform === "instagram" ? post.instagramStatus
       : platform === "tiktok" ? post.tiktokStatus
       : platform === "youtube" ? post.youtubeStatus : post.snapchatStatus,
   ));
+  const pendingTargets = requestedPlatform
+    ? eligibleTargets.filter((platform) => platform === requestedPlatform)
+    : eligibleTargets;
   if (pendingTargets.length === 0) {
+    if (requestedPlatform) return jsonError("لا توجد محاولة فاشلة أو معلّقة لإعادة تشغيلها لهذه المنصة.", 409);
     return NextResponse.json({ post: toSavedPost(post) }, { headers: { "Cache-Control": "no-store" } });
   }
 
@@ -238,51 +344,80 @@ export async function POST(
     }
   }
 
-  const claimWhere = {
-    id: post.id,
-    status: { not: PostStatus.PUBLISHING },
-    OR: [
-      ...(pendingTargets.includes("facebook")
-        ? [{ facebookStatus: { in: [PostStatus.PENDING, PostStatus.FAILED] } }, { facebookStatus: null }]
-        : []),
-      ...(pendingTargets.includes("instagram")
-        ? [{ instagramStatus: { in: [PostStatus.PENDING, PostStatus.FAILED] } }, { instagramStatus: null }]
-        : []),
-      ...(pendingTargets.includes("tiktok")
-        ? [{ tiktokStatus: { in: [PostStatus.PENDING, PostStatus.FAILED] } }, { tiktokStatus: null }]
-        : []),
-      ...(pendingTargets.includes("youtube")
-        ? [{ youtubeStatus: { in: [PostStatus.PENDING, PostStatus.FAILED] } }, { youtubeStatus: null }]
-        : []),
-      ...(pendingTargets.includes("snapchat")
-        ? [{ snapchatStatus: { in: [PostStatus.PENDING, PostStatus.FAILED] } }, { snapchatStatus: null }]
-        : []),
-    ],
-  };
-  const claimData = {
-    status: PostStatus.PUBLISHING,
-    ...(pendingTargets.includes("facebook")
-      ? { facebookStatus: PostStatus.PUBLISHING, facebookError: null }
-      : {}),
-    ...(pendingTargets.includes("instagram")
-      ? { instagramStatus: PostStatus.PUBLISHING, instagramError: null }
-      : {}),
-    ...(pendingTargets.includes("tiktok")
-      ? { tiktokStatus: PostStatus.PUBLISHING, tiktokError: null }
-      : {}),
-    ...(pendingTargets.includes("youtube")
-      ? { youtubeStatus: PostStatus.PUBLISHING, youtubeError: null }
-      : {}),
-    ...(pendingTargets.includes("snapchat")
-      ? { snapchatStatus: PostStatus.PUBLISHING, snapchatError: null }
-      : {}),
-  };
-
+  const claimedTargets: Platform[] = [];
   try {
-    const claim = await prisma.post.updateMany({ where: claimWhere, data: claimData });
-    if (claim.count !== 1) return jsonError("النشر قيد التنفيذ أو لا توجد منصة قابلة لإعادة المحاولة.", 409);
+    for (const platform of pendingTargets) {
+      const claim = platform === "facebook"
+        ? await prisma.post.updateMany({
+            where: { id: post.id, OR: [
+              { facebookStatus: { in: [PostStatus.PENDING, PostStatus.FAILED] } },
+              { facebookStatus: null },
+            ] },
+            data: {
+              status: PostStatus.PUBLISHING,
+              publishingStartedAt: new Date(),
+              facebookStatus: PostStatus.PUBLISHING,
+              facebookError: null,
+            },
+          })
+        : platform === "instagram"
+          ? await prisma.post.updateMany({
+              where: { id: post.id, OR: [
+                { instagramStatus: { in: [PostStatus.PENDING, PostStatus.FAILED] } },
+                { instagramStatus: null },
+              ] },
+              data: {
+                status: PostStatus.PUBLISHING,
+                publishingStartedAt: new Date(),
+                instagramStatus: PostStatus.PUBLISHING,
+                instagramError: null,
+              },
+            })
+          : platform === "tiktok"
+            ? await prisma.post.updateMany({
+                where: { id: post.id, OR: [
+                  { tiktokStatus: { in: [PostStatus.PENDING, PostStatus.FAILED] } },
+                  { tiktokStatus: null },
+                ] },
+                data: {
+                  status: PostStatus.PUBLISHING,
+                  publishingStartedAt: new Date(),
+                  tiktokStatus: PostStatus.PUBLISHING,
+                  tiktokError: null,
+                },
+              })
+            : platform === "youtube"
+              ? await prisma.post.updateMany({
+                  where: { id: post.id, OR: [
+                    { youtubeStatus: { in: [PostStatus.PENDING, PostStatus.FAILED] } },
+                    { youtubeStatus: null },
+                  ] },
+                  data: {
+                    status: PostStatus.PUBLISHING,
+                    publishingStartedAt: new Date(),
+                    youtubeStatus: PostStatus.PUBLISHING,
+                    youtubeError: null,
+                  },
+                })
+              : await prisma.post.updateMany({
+                  where: { id: post.id, OR: [
+                    { snapchatStatus: { in: [PostStatus.PENDING, PostStatus.FAILED] } },
+                    { snapchatStatus: null },
+                  ] },
+                  data: {
+                    status: PostStatus.PUBLISHING,
+                    publishingStartedAt: new Date(),
+                    snapchatStatus: PostStatus.PUBLISHING,
+                    snapchatError: null,
+                  },
+                });
+      if (claim.count === 1) claimedTargets.push(platform);
+    }
   } catch {
-    return jsonError("تعذّر بدء النشر في قاعدة البيانات.", 503);
+    return jsonError("تعذّر بدء مهام النشر في قاعدة البيانات.", 503);
+  }
+  if (claimedTargets.length === 0) {
+    return jsonError("مهام هذه المنصات قيد التنفيذ بالفعل أو لا توجد محاولة قابلة لإعادة التشغيل.", 409);
   }
 
   const metaSettings = {
@@ -296,7 +431,7 @@ export async function POST(
     mediaType: post.mediaType === "video" ? "video" as const : "image" as const,
   };
 
-  const results = await Promise.allSettled(pendingTargets.map(async (platform) => {
+  const processPlatform = async (platform: Platform) => {
     let publishedId: string;
     try {
       const sourceMedia = await assertPlatformMediaValid(post, platform);
@@ -449,65 +584,50 @@ export async function POST(
         : { instagramStatus: PostStatus.PUBLISHED, instagramPostId: publishedId, instagramError: null },
     });
     return { platform, postId: publishedId };
-  }));
+  };
 
-  if (results.some((result) => result.status === "rejected")) {
-    const message = "قد يكون قد تم النشر، لكن تعذّر حفظ النتيجة. تحققي من المنصة قبل إعادة المحاولة.";
-    try {
-      const uncertainPost = await prisma.post.findUniqueOrThrow({ where: { id: post.id } });
-      return NextResponse.json(
-        { error: message, post: toSavedPost(uncertainPost) },
-        { status: 503, headers: { "Cache-Control": "no-store" } },
-      );
-    } catch {
-      return jsonError(message, 503);
-    }
+  for (const platform of claimedTargets) {
+    after(async () => {
+      try {
+        await processPlatform(platform);
+      } catch {
+        try {
+          await prisma.post.update({
+            where: { id: post.id },
+            data: platformStatusUpdate(
+              platform,
+              PostStatus.UNKNOWN,
+              "تعذّر حفظ نتيجة مهمة النشر. تحققي من المنصة قبل إعادة المحاولة.",
+            ),
+          });
+        } catch (persistenceError) {
+          console.error("Failed to persist isolated publishing task state.", {
+            postId: post.id,
+            platform,
+            error: persistenceError instanceof Error ? persistenceError.message : "unknown",
+          });
+        }
+      } finally {
+        try {
+          await refreshPostStatus(post.id);
+        } catch (statusError) {
+          console.error("Failed to refresh post publishing status.", {
+            postId: post.id,
+            platform,
+            error: statusError instanceof Error ? statusError.message : "unknown",
+          });
+        }
+      }
+    });
   }
 
-  const fulfilledResults = results.flatMap((result) =>
-    result.status === "fulfilled" ? [result.value] : [],
-  );
-  const failedResults = fulfilledResults.filter(
-    (result): result is typeof result & { error: string } => "error" in result,
-  );
-  const hasFailures = failedResults.length > 0;
-  const platformLabels: Record<Platform, string> = {
-    facebook: "Facebook",
-    instagram: "Instagram",
-    tiktok: "TikTok",
-    youtube: "YouTube",
-    snapchat: "Snapchat",
-  };
-  const failureMessage = failedResults
-    .map((result) => `${platformLabels[result.platform]}: ${result.error}`)
-    .join(" | ");
-  const failureStatus = failedResults.some((result) => result.upstreamFailure) ? 502 : 422;
   try {
-    const updatedPost = await prisma.post.update({
-      where: { id: post.id },
-      data: {
-        status: currentStatus(await prisma.post.findUniqueOrThrow({
-          where: { id: post.id },
-          select: {
-            platforms: true,
-            facebookStatus: true,
-            instagramStatus: true,
-            tiktokStatus: true,
-            youtubeStatus: true,
-            snapchatStatus: true,
-          },
-        })),
-      },
-    });
-    return NextResponse.json({
-      post: toSavedPost(updatedPost),
-      results: fulfilledResults,
-      ...(hasFailures ? { error: failureMessage } : {}),
-    }, {
-      status: hasFailures ? failureStatus : 200,
-      headers: { "Cache-Control": "no-store" },
-    });
+    const queuedPost = await prisma.post.findUniqueOrThrow({ where: { id: post.id } });
+    return NextResponse.json(
+      { post: toSavedPost(queuedPost), queuedPlatforms: claimedTargets },
+      { status: 202, headers: { "Cache-Control": "no-store" } },
+    );
   } catch {
-    return jsonError("تعذّر حفظ نتيجة النشر في قاعدة البيانات.", 503);
+    return jsonError("بدأت مهام النشر، لكن تعذّر تحميل حالتها الأولية.", 503);
   }
 }
