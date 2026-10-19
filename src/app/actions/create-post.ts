@@ -167,6 +167,11 @@ export async function createPost(input: CreatePostInput): Promise<CreatePostResu
     durationSeconds: verifiedMedia.duration,
     snapchatContentType,
     sourceAsset: true,
+    allowPendingVideoDuration: mediaType === "video" &&
+      !(typeof verifiedMedia.duration === "number" &&
+        Number.isFinite(verifiedMedia.duration) &&
+        verifiedMedia.duration > 0) &&
+      verifiedMedia.secure_url.startsWith("https://res.cloudinary.com/"),
   });
   if (mediaValidation.errors.length > 0 || mediaValidation.pending.length > 0) {
     return {

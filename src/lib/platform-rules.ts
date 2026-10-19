@@ -84,6 +84,7 @@ export type PlatformMediaMetadata = {
   snapchatContentType?: SnapchatContentType;
   tiktokMaxDurationSeconds?: number | null;
   sourceAsset?: boolean;
+  allowPendingVideoDuration?: boolean;
 };
 
 export type PlatformValidationResult = {
@@ -245,7 +246,9 @@ export function validatePlatformMedia(input: PlatformMediaMetadata): PlatformVal
       if (input.durationSeconds == null ||
         !Number.isFinite(input.durationSeconds) ||
         input.durationSeconds <= 0) {
-        pending.push(`${platformName(platform)}: انتظري حتى تكتمل قراءة مدة الفيديو.`);
+        if (!input.allowPendingVideoDuration) {
+          pending.push(`${platformName(platform)}: انتظري حتى تكتمل قراءة مدة الفيديو.`);
+        }
       } else {
         if (minimumDuration != null && input.durationSeconds < minimumDuration) {
           errors.push(platformDurationError(platform, minimumDuration, maximumDuration));

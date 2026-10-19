@@ -56,6 +56,9 @@ async function assertPlatformMediaValid(
   }
   const mimeType = mimeTypeFromCloudinaryResource(resource.resource_type, resource.format);
   if (!mimeType) throw new Error(`${platform}: صيغة الملف المحفوظ غير مدعومة.`);
+  if (!resource.secure_url.startsWith("https://res.cloudinary.com/")) {
+    throw new Error(`${platform}: رابط الوسائط الآمن من Cloudinary غير صالح.`);
+  }
 
   const validation = validatePlatformMedia({
     mimeType,
@@ -66,6 +69,11 @@ async function assertPlatformMediaValid(
     durationSeconds: resource.duration,
     snapchatContentType: post.snapchatContentType === "SPOTLIGHT" ? "SPOTLIGHT" : "STORY",
     sourceAsset: true,
+    allowPendingVideoDuration: mediaType === "video" &&
+      !(typeof resource.duration === "number" &&
+        Number.isFinite(resource.duration) &&
+        resource.duration > 0) &&
+      resource.secure_url.startsWith("https://res.cloudinary.com/"),
   });
   const issues = [...validation.errors, ...validation.pending];
   if (issues.length > 0) throw new Error(issues.join(" "));

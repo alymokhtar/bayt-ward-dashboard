@@ -250,17 +250,19 @@ export async function uploadMediaDirectly(
   }
 
   try {
-    const confirmationBody = JSON.stringify({
-      publicId: uploadData.publicId,
-      mimeType: file.type,
-      fileSize: file.size,
-      platforms,
-      snapchatContentType,
-    });
     let confirmed: unknown;
     let confirmationResponse: Response | undefined;
-    const maxConfirmationAttempts = 6;
+    const maxConfirmationAttempts = 12;
     for (let attempt = 0; attempt < maxConfirmationAttempts; attempt += 1) {
+      const confirmationBody = JSON.stringify({
+        publicId: uploadData.publicId,
+        mimeType: file.type,
+        fileSize: file.size,
+        platforms,
+        snapchatContentType,
+        allowPendingVideoDuration: policy.mediaType === "video" &&
+          attempt === maxConfirmationAttempts - 1,
+      });
       confirmationResponse = await fetch("/api/media/confirm-upload", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
@@ -282,9 +284,11 @@ export async function uploadMediaDirectly(
       if (confirmationResponse.status === 202 || retryable) {
         if (attempt < maxConfirmationAttempts - 1) {
           onProcessing?.(
-            `جاري معالجة الفيديو وتأكيد البيانات... (${attempt + 1}/${maxConfirmationAttempts - 1})`,
+            attempt === maxConfirmationAttempts - 2
+              ? "ما زالت بيانات المدة متأخرة؛ سنكمل التأكيد باستخدام رابط الفيديو الموثق..."
+              : `جاري معالجة الفيديو وتأكيد البيانات... (${attempt + 1}/${maxConfirmationAttempts})`,
           );
-          await new Promise((resolve) => setTimeout(resolve, 2500));
+          await new Promise((resolve) => setTimeout(resolve, 3000));
           continue;
         }
         throw new VideoMetadataPendingError(

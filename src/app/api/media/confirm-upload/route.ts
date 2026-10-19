@@ -8,8 +8,8 @@ export const dynamic = "force-dynamic";
 
 const UPLOAD_FOLDER = "bayt-ward-dashboard";
 const ALLOWED_PLATFORMS = new Set(["facebook", "instagram", "tiktok", "youtube", "snapchat"]);
-const VIDEO_METADATA_ATTEMPTS = 4;
-const VIDEO_METADATA_RETRY_DELAY_MS = 750;
+const VIDEO_METADATA_ATTEMPTS = 6;
+const VIDEO_METADATA_RETRY_DELAY_MS = 250;
 
 type ValidationDetails = {
   errors: string[];
@@ -106,6 +106,7 @@ export async function POST(request: Request) {
   const fileSize = input.fileSize;
   const platforms = input.platforms;
   const snapchatContentType = input.snapchatContentType;
+  const allowPendingVideoDuration = input.allowPendingVideoDuration === true;
   if (typeof publicId !== "string" ||
     !new RegExp(`^${UPLOAD_FOLDER}/[0-9a-f-]{36}$`, "i").test(publicId) ||
     typeof mimeType !== "string" || !Number.isSafeInteger(fileSize) ||
@@ -113,6 +114,7 @@ export async function POST(request: Request) {
     !Array.isArray(platforms) || platforms.length === 0 ||
     platforms.length > ALLOWED_PLATFORMS.size ||
     !platforms.every((platform) => typeof platform === "string" && ALLOWED_PLATFORMS.has(platform)) ||
+    (input.allowPendingVideoDuration !== undefined && typeof input.allowPendingVideoDuration !== "boolean") ||
     (snapchatContentType !== undefined && snapchatContentType !== "STORY" && snapchatContentType !== "SPOTLIGHT")) {
     return jsonError("بيانات الملف المرفوع غير صالحة.", 400);
   }
@@ -178,7 +180,9 @@ export async function POST(request: Request) {
   let resourceLookupError: unknown;
   let videoMetadataPending = false;
   let resourceMetadataIsValid = false;
-  const attempts = policy.mediaType === "video" ? VIDEO_METADATA_ATTEMPTS : 1;
+  const attempts = policy.mediaType === "video" && !allowPendingVideoDuration
+    ? VIDEO_METADATA_ATTEMPTS
+    : 1;
 
   for (let attempt = 0; attempt < attempts; attempt += 1) {
     try {
@@ -255,7 +259,7 @@ export async function POST(request: Request) {
     );
   }
 
-  if (resourceMetadataIsValid && videoMetadataPending) {
+  if (resourceMetadataIsValid && videoMetadataPending && !allowPendingVideoDuration) {
     return jsonProcessingResponse(
       "ما زال Cloudinary يجهّز مدة الفيديو. سيُعاد التحقق تلقائياً بعد لحظات.",
       {
@@ -349,13 +353,18 @@ export async function POST(request: Request) {
     durationSeconds: resource.duration,
     snapchatContentType: (snapchatContentType ?? "STORY") as SnapchatContentType,
     sourceAsset: true,
+    allowPendingVideoDuration: allowPendingVideoDuration &&
+      policy.mediaType === "video" &&
+      resource.secure_url.startsWith("https://res.cloudinary.com/"),
   });
   if (validation.errors.length > 0 || validation.pending.length > 0) {
     const reasons = [...validation.errors, ...validation.pending];
     const details: ValidationDetails = {
       errors: validation.errors,
       pending: validation.pending,
-      warnings: validation.warnings,
+      warnings: allowPendingVideoDuration && videoMetadataPending
+        ? [...validation.warnings, "مدة الفيديو لم تصل من Cloudinary؛ سيعتمد فحص المدة على بيانات الفيديو محلياً والمنصة أثناء النشر."]
+        : validation.warnings,
       metadata: {
         mimeType: actualMimeType,
         fileSize: resource.bytes,
@@ -374,6 +383,14 @@ export async function POST(request: Request) {
     );
   }
 
+  if (allowPendingVideoDuration && videoMetadataPending) {
+    console.warn("[media/confirm-upload] accepting video with delayed duration metadata", {
+      platforms: platforms.join(","),
+      fileSize: resource.bytes,
+      format,
+    });
+  }
+
   return NextResponse.json({
     success: true,
     mediaUrl: resource.secure_url,
@@ -381,6 +398,7 @@ export async function POST(request: Request) {
     mediaType: policy.mediaType,
     bytes: resource.bytes,
     format,
+    durationPending: videoMetadataPending,
   }, {
     headers: { "Cache-Control": "no-store" },
   });
