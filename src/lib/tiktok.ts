@@ -11,8 +11,8 @@ import {
 
 const TIKTOK_API = "https://open.tiktokapis.com";
 const SINGLE_CHUNK_MAX_SIZE = 64 * 1024 * 1024;
-const VIDEO_METADATA_POLL_ATTEMPTS = 6;
-const VIDEO_METADATA_POLL_INTERVAL_MS = 3_000;
+const VIDEO_METADATA_POLL_ATTEMPTS = 15;
+const VIDEO_METADATA_POLL_INTERVAL_MS = 4_000;
 type TikTokError = {
   code?: string;
   message?: string;
@@ -189,6 +189,7 @@ export async function uploadTikTokVideo(input: {
 
   let mediaResource: Awaited<ReturnType<typeof cloudinary.api.resource>> | undefined;
   let cloudinaryDuration: number | null = null;
+  let storedDuration = isAvailableDuration(input.durationSeconds) ? input.durationSeconds : null;
   let lastMetadataError: unknown;
   for (let attempt = 0; attempt < VIDEO_METADATA_POLL_ATTEMPTS; attempt += 1) {
     try {
@@ -201,8 +202,18 @@ export async function uploadTikTokVideo(input: {
       lastMetadataError = error;
     }
 
-    if (mediaResource &&
-      (cloudinaryDuration !== null || isAvailableDuration(input.durationSeconds))) {
+    const latestPost = await prisma.post.findUnique({
+      where: { id: input.postId },
+      select: { mediaDurationSeconds: true },
+    });
+    if (!latestPost) {
+      throw new Error("TikTok post no longer exists while checking video metadata.");
+    }
+    if (isAvailableDuration(latestPost.mediaDurationSeconds)) {
+      storedDuration = latestPost.mediaDurationSeconds;
+    }
+
+    if (mediaResource && (cloudinaryDuration !== null || storedDuration !== null)) {
       break;
     }
     if (attempt < VIDEO_METADATA_POLL_ATTEMPTS - 1) {
@@ -220,16 +231,15 @@ export async function uploadTikTokVideo(input: {
 
   const mediaMimeType = mimeTypeFromCloudinaryResource(mediaResource.resource_type, mediaResource.format);
   if (!mediaMimeType) throw new Error("TikTok يتطلب فيديو بصيغة MP4 أو MOV أو WebM.");
-  const durationSeconds = cloudinaryDuration ??
-    (isAvailableDuration(input.durationSeconds) ? input.durationSeconds : null);
-  if (cloudinaryDuration !== null && cloudinaryDuration !== input.durationSeconds) {
+  const durationSeconds = cloudinaryDuration ?? storedDuration;
+  if (cloudinaryDuration !== null && cloudinaryDuration !== storedDuration) {
     await prisma.post.update({
       where: { id: input.postId },
       data: { mediaDurationSeconds: cloudinaryDuration },
     });
   }
   if (durationSeconds === null) {
-    throw new Error("تعذّر الحصول على مدة فيديو TikTok من Cloudinary بعد ست محاولات؛ لم يبدأ النشر.");
+    throw new Error("تعذّر الحصول على مدة فيديو TikTok من Cloudinary بعد 15 محاولة؛ لم يبدأ النشر.");
   }
 
   const accessToken = await getAccessToken();
