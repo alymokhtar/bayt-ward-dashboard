@@ -1,0 +1,2 @@
+ALTER TABLE "Post"
+  ADD COLUMN "mediaTransformMode" VARCHAR(10) NOT NULL DEFAULT 'FIT';

@@ -23,6 +23,7 @@ export default async function Home() {
           cloudinaryPublicId: true,
           platforms: true,
           mediaType: true,
+          mediaTransformMode: true,
           status: true,
           facebookStatus: true,
           instagramStatus: true,
@@ -66,6 +67,7 @@ export default async function Home() {
         ? post.platforms.filter((platform): platform is string => typeof platform === "string")
         : [],
       mediaType: post.mediaType === "video" ? "video" : "image",
+      mediaTransformMode: post.mediaTransformMode === "CROP" ? "CROP" : "FIT",
       youtubeTags: Array.isArray(post.youtubeTags)
         ? post.youtubeTags.filter((tag): tag is string => typeof tag === "string")
         : [],

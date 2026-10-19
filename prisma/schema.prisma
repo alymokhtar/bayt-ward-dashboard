@@ -23,6 +23,7 @@ model Post {
   cloudinaryPublicId   String      @db.Text
   platforms            Json        @default("[]")
   mediaType            String      @default("image") @db.VarChar(10)
+  mediaTransformMode   String      @default("FIT") @db.VarChar(10)
   status               PostStatus  @default(PENDING)
   facebookStatus       PostStatus?
   instagramStatus      PostStatus?

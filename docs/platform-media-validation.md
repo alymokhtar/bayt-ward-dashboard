@@ -13,6 +13,19 @@ The dashboard applies these rules before direct upload, verifies the actual Clou
 
 There is no longer one shared 10/100 MiB upload ceiling for dashboard media. The allowed MIME types and maximum size are intersected across the selected platforms. The TikTok 4 GB ceiling and Snapchat 100 MiB ceiling are application/adapter safeguards, not official provider-wide maximums. Cloudinary uploads larger than 20 MiB use its signed chunked Upload API. Cloudinary account limits, provider changes, and API eligibility rules can still be stricter than these client-side rules; server-side validation and the destination API remain authoritative.
 
+## Platform derivatives
+
+The source upload is retained in Cloudinary. Before a post is created, the editor shows per-platform framing previews and requires approval. **Fit** is the default and preserves the whole frame with padding; **Crop** fills the destination frame and may remove edge content. The chosen mode is stored with the post and reused on retries.
+
+At publish time, public Cloudinary transformation URLs are generated only for targets that need a derivative:
+
+- Instagram images become JPEG, optimized, and framed at 4:5; Reels become H.264/AAC MP4 at 1080×1920.
+- Snapchat images become JPEG and Story/Spotlight videos become H.264/AAC MP4 at 1080×1920.
+- Facebook images are converted/resized to JPEG only when the source is WebP or exceeds the dashboard image-size rule. GIF is not flattened.
+- TikTok and YouTube continue to receive the original video. Facebook video continues to receive the original.
+
+The UI preview uses the selected local file with the same target frame and fit/crop behavior; Cloudinary performs the final encode when the platform fetches the generated URL. The original upload is not overwritten. Transformations are on-demand Cloudinary deliveries and count against the Cloudinary account's transformation/usage plan.
+
 Video duration and dimensions come from the local media preview for the pre-upload check, then from Cloudinary's asset metadata for server checks. TikTok duration is account-dependent. Snapchat's Story/Spotlight duration and minimum-dimension requirements are checked on the server as well.
 
 The separate legacy multipart endpoint at `/api/youtube/upload` is not used by the dashboard and retains its own 100 MB request limit; dashboard uploads use the Cloudinary flow above.
@@ -26,3 +39,5 @@ The separate legacy multipart endpoint at `/api/youtube/upload` is not used by t
 - [YouTube supported upload formats and limits](https://support.google.com/youtube/answer/1722171)
 - [Facebook Video API publishing](https://developers.facebook.com/documentation/video-api/guides/publishing)
 - [Cloudinary chunked asset uploads](https://cloudinary.com/documentation/upload_images#chunked_asset_upload)
+- [Cloudinary image transformations](https://cloudinary.com/documentation/image_transformations)
+- [Cloudinary video transformations](https://cloudinary.com/documentation/video_manipulation_and_delivery)

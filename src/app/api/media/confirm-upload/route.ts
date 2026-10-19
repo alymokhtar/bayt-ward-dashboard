@@ -68,6 +68,7 @@ export async function POST(request: Request) {
     mimeType,
     platforms as string[],
     snapchatContentType as SnapchatContentType | undefined,
+    fileSize,
   );
   if (!policy) {
     const validation = validatePlatformMedia({
@@ -75,6 +76,7 @@ export async function POST(request: Request) {
       fileSize,
       platforms: platforms as string[],
       snapchatContentType: (snapchatContentType ?? "STORY") as SnapchatContentType,
+      sourceAsset: true,
     });
     return jsonError(
       validation.errors[0] ?? "نوع الملف لا يتوافق مع المنصات المحددة.",
@@ -87,6 +89,7 @@ export async function POST(request: Request) {
       fileSize,
       platforms: platforms as string[],
       snapchatContentType: (snapchatContentType ?? "STORY") as SnapchatContentType,
+      sourceAsset: true,
     });
     try {
       const removed = await removeInvalidUpload(publicId, policy.mediaType);
@@ -157,6 +160,7 @@ export async function POST(request: Request) {
       height: resource.height,
       durationSeconds: resource.duration,
       snapchatContentType: (snapchatContentType ?? "STORY") as SnapchatContentType,
+      sourceAsset: true,
   });
   if (validation.errors.length > 0 || validation.pending.length > 0) {
       try {

@@ -38,7 +38,12 @@ import { createPost, type SavedPost } from "@/app/actions/create-post";
 import { cleanupFailedUpload } from "@/app/actions/cleanup-upload";
 import { deletePost } from "@/app/actions/delete-post";
 import { uploadMediaDirectly } from "@/lib/cloudinary-direct-upload";
-import { SUPPORTED_UPLOAD_MIME_TYPES, validatePlatformMedia } from "@/lib/platform-rules";
+import {
+  shouldTransformMedia,
+  SUPPORTED_UPLOAD_MIME_TYPES,
+  validatePlatformMedia,
+  type MediaTransformMode,
+} from "@/lib/platform-rules";
 import {
   isTikTokPrivacyLevel,
   TIKTOK_PRIVACY_LABELS,
@@ -376,6 +381,8 @@ export default function DashboardClient({ initialPosts, initialStats, databaseAv
   const [isDragging, setIsDragging] = useState(false);
   const [isSaving, setIsSaving] = useState(false);
   const [uploadProgress, setUploadProgress] = useState<number | null>(null);
+  const [mediaTransformMode, setMediaTransformMode] = useState<MediaTransformMode>("FIT");
+  const [transformPreviewApproved, setTransformPreviewApproved] = useState(false);
   const [error, setError] = useState("");
   const [notice, setNotice] = useState("");
   const [previewUrl, setPreviewUrl] = useState("");
@@ -407,8 +414,21 @@ export default function DashboardClient({ initialPosts, initialStats, databaseAv
         durationSeconds: videoDuration,
         snapchatContentType,
         tiktokMaxDurationSeconds: tiktokMaxDuration,
+        sourceAsset: true,
       })
     : { errors: [], warnings: [], pending: [] };
+  const selectedMediaType = selectedFile?.type.startsWith("video/") ? "video" : "image";
+  const transformationPlatforms = selectedFile
+    ? selectedPlatforms.filter((platform) =>
+        ["instagram", "snapchat", "facebook"].includes(platform) &&
+        shouldTransformMedia(
+          platform as "instagram" | "snapchat" | "facebook",
+          selectedMediaType,
+          selectedFile.type,
+          selectedFile.size,
+        ),
+      )
+    : [];
   const tiktokSelected = selectedPlatforms.includes("tiktok");
   useEffect(() => {
     if (!tiktokSelected || !tiktokConnected) return;
@@ -663,6 +683,8 @@ export default function DashboardClient({ initialPosts, initialStats, databaseAv
     objectUrlRef.current = URL.createObjectURL(file);
     setPreviewUrl(objectUrlRef.current);
     setSelectedFile(file);
+    setMediaTransformMode("FIT");
+    setTransformPreviewApproved(false);
     setVideoDuration(null);
     setVideoDimensions(null);
   }
@@ -675,6 +697,7 @@ export default function DashboardClient({ initialPosts, initialStats, databaseAv
     setSelectedPlatforms((current) =>
       current.includes(platform) ? current.filter((item) => item !== platform) : [...current, platform],
     );
+    setTransformPreviewApproved(false);
   }
 
   async function handleSubmit(event: React.FormEvent<HTMLFormElement>) {
@@ -703,6 +726,7 @@ export default function DashboardClient({ initialPosts, initialStats, databaseAv
       durationSeconds: videoDuration,
       snapchatContentType,
       tiktokMaxDurationSeconds: tiktokMaxDuration,
+      sourceAsset: true,
     });
     if (platformValidation.errors.length > 0) {
       setError(platformValidation.errors[0]);
@@ -710,6 +734,10 @@ export default function DashboardClient({ initialPosts, initialStats, databaseAv
     }
     if (platformValidation.pending.length > 0) {
       setError(platformValidation.pending[0]);
+      return;
+    }
+    if (transformationPlatforms.length > 0 && !transformPreviewApproved) {
+      setError("راجعي معاينة مشتقات المنصات ثم اعتمديها قبل المتابعة.");
       return;
     }
     if (selectedPlatforms.includes("youtube")) {
@@ -808,6 +836,7 @@ export default function DashboardClient({ initialPosts, initialStats, databaseAv
         mediaUrl: upload.mediaUrl,
         cloudinaryPublicId: upload.publicId,
         mediaType: selectedFile.type.startsWith("video/") ? "video" : "image",
+        mediaTransformMode,
         platforms: selectedPlatforms,
         ...(selectedPlatforms.includes("tiktok") ? { tiktokPrivacyLevel } : {}),
         ...(selectedPlatforms.includes("youtube")
@@ -1051,6 +1080,94 @@ export default function DashboardClient({ initialPosts, initialStats, databaseAv
                         <span className="mt-3 text-[10px] text-[#adaea7]">JPG · PNG · WEBP · MP4 · MOV</span>
                       </button>
                     )}
+                    {transformationPlatforms.length > 0 && selectedFile && previewUrl ? (
+                      <section className="mt-4 space-y-4 rounded-2xl border border-[#dce7df] bg-[#f8fbf8] p-4 sm:p-5" aria-labelledby="media-derivative-title">
+                        <div>
+                          <h3 id="media-derivative-title" className="text-sm font-bold text-[#3b463f]">معاينة المشتقات المقترحة</h3>
+                          <p className="mt-1 text-xs leading-6 text-[#727b72]">
+                            سيبقى الأصل محفوظاً. هذه معاينة لتأطير الوسائط؛ سيحوّل Cloudinary الصيغ والأبعاد تلقائياً عند النشر.
+                          </p>
+                        </div>
+                        <fieldset>
+                          <legend className="mb-2 text-xs font-semibold text-[#536057]">طريقة تكييف الإطار</legend>
+                          <div className="grid gap-2 sm:grid-cols-2">
+                            <label className="flex cursor-pointer items-start gap-2.5 rounded-xl border border-[#e5e9e2] bg-white p-3 text-xs leading-5 text-[#59635b]">
+                              <input
+                                type="radio"
+                                name="media-transform-mode"
+                                value="FIT"
+                                checked={mediaTransformMode === "FIT"}
+                                onChange={() => {
+                                  setMediaTransformMode("FIT");
+                                  setTransformPreviewApproved(false);
+                                }}
+                                className="mt-1 accent-[#205c4e]"
+                              />
+                              <span><strong className="block">احتواء كامل (Fit)</strong>يحافظ على الإطار بالكامل وقد يضيف حوافاً.</span>
+                            </label>
+                            <label className="flex cursor-pointer items-start gap-2.5 rounded-xl border border-[#e5e9e2] bg-white p-3 text-xs leading-5 text-[#59635b]">
+                              <input
+                                type="radio"
+                                name="media-transform-mode"
+                                value="CROP"
+                                checked={mediaTransformMode === "CROP"}
+                                onChange={() => {
+                                  setMediaTransformMode("CROP");
+                                  setTransformPreviewApproved(false);
+                                }}
+                                className="mt-1 accent-[#205c4e]"
+                              />
+                              <span><strong className="block">قص لملء الإطار (Crop)</strong>يملأ المقاس المطلوب وقد يقص الحواف.</span>
+                            </label>
+                          </div>
+                        </fieldset>
+                        <div className="grid gap-3 sm:grid-cols-2">
+                          {transformationPlatforms.map((platform) => {
+                            const portrait = selectedFile.type.startsWith("video/") || platform === "snapchat";
+                            return (
+                              <div key={platform} className="rounded-xl border border-[#e8ece5] bg-white p-3">
+                                <p className="mb-2 text-xs font-semibold text-[#536057]">
+                                  {PLATFORMS.find((item) => item.id === platform)?.name ?? platform}
+                                  {selectedFile.type.startsWith("video/") ? " · 9:16 · MP4" : " · JPEG"}
+                                </p>
+                                <div className={`relative mx-auto overflow-hidden rounded-lg ${selectedFile.type.startsWith("video/") ? "bg-black" : "bg-white"} ${portrait ? "aspect-[9/16] max-w-[180px]" : platform === "instagram" ? "aspect-[4/5] max-w-[220px]" : "aspect-[4/3] max-w-[260px]"}`}>
+                                  {selectedFile.type.startsWith("video/") ? (
+                                    <video
+                                      src={previewUrl}
+                                      className={`size-full ${mediaTransformMode === "FIT" ? "object-contain" : "object-cover"}`}
+                                      controls
+                                      muted
+                                      playsInline
+                                    />
+                                  ) : (
+                                    <Image
+                                      src={previewUrl}
+                                      alt={`معاينة مشتق ${platform}`}
+                                      fill
+                                      sizes="260px"
+                                      className={mediaTransformMode === "FIT" ? "object-contain" : "object-cover"}
+                                      unoptimized
+                                    />
+                                  )}
+                                </div>
+                              </div>
+                            );
+                          })}
+                        </div>
+                        <div className="flex flex-wrap items-center gap-3">
+                          <button
+                            type="button"
+                            onClick={() => setTransformPreviewApproved(true)}
+                            className={`rounded-xl px-4 py-2.5 text-xs font-semibold transition ${transformPreviewApproved ? "bg-[#e4f0e7] text-[#286149]" : "bg-[#3f806d] text-white hover:bg-[#326d5b]"}`}
+                          >
+                            {transformPreviewApproved ? "تم اعتماد المعاينة" : "اعتماد المشتقات والمعاينة"}
+                          </button>
+                          <span role="status" className="text-xs text-[#727b72]">
+                            {transformPreviewApproved ? "سيُستخدم هذا الخيار عند إنشاء مشتقات النشر." : "اختاري طريقة العرض وراجعي المعاينات ثم اعتمديها."}
+                          </span>
+                        </div>
+                      </section>
+                    ) : null}
                     {mediaValidation.errors.length > 0 ? (
                       <div role="alert" className="mt-3 space-y-1 rounded-xl border border-[#f0d4cc] bg-[#fff5f2] px-4 py-3 text-xs leading-5 text-[#a44f46]">
                         {mediaValidation.errors.map((message) => <p key={message}>{message}</p>)}

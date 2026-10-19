@@ -1,6 +1,7 @@
 export type PublishingPlatform = "facebook" | "instagram" | "tiktok" | "youtube" | "snapchat";
 export type PlatformMediaType = "image" | "video";
 export type SnapchatContentType = "STORY" | "SPOTLIGHT";
+export type MediaTransformMode = "FIT" | "CROP";
 
 type MediaRule = {
   mediaType: PlatformMediaType;
@@ -13,6 +14,7 @@ type MediaRule = {
 const MIB = 1024 * 1024;
 const GB = 1000 * 1000 * 1000;
 const INSTAGRAM_IMAGE_MAX_BYTES = 8_000_000;
+const MAX_TRANSFORMABLE_IMAGE_SOURCE_BYTES = 100 * MIB;
 export const SNAPCHAT_MAX_MEDIA_BYTES = 100 * MIB;
 
 const PLATFORM_MEDIA_RULES: Record<PublishingPlatform, readonly MediaRule[]> = {
@@ -81,6 +83,7 @@ export type PlatformMediaMetadata = {
   durationSeconds?: number | null;
   snapchatContentType?: SnapchatContentType;
   tiktokMaxDurationSeconds?: number | null;
+  sourceAsset?: boolean;
 };
 
 export type PlatformValidationResult = {
@@ -97,6 +100,7 @@ export function getMediaUploadPolicy(
   mimeType: string,
   platforms: readonly string[],
   snapchatContentType: SnapchatContentType = "STORY",
+  fileSize?: number,
 ) {
   if (!SUPPORTED_UPLOAD_MIME_TYPES.includes(mimeType as (typeof SUPPORTED_UPLOAD_MIME_TYPES)[number]) ||
     platforms.length === 0 ||
@@ -105,28 +109,77 @@ export function getMediaUploadPolicy(
   }
 
   const mediaType: PlatformMediaType = mimeType.startsWith("video/") ? "video" : "image";
-  const rules = platforms.map((platform) => PLATFORM_MEDIA_RULES[platform as PublishingPlatform]
-    .find((rule) => rule.mediaType === mediaType && rule.formats.includes(mimeType)));
+  const rules = platforms.map((platform) => {
+    const rule = PLATFORM_MEDIA_RULES[platform as PublishingPlatform]
+      .find((candidate) => candidate.mediaType === mediaType && candidate.formats.includes(mimeType));
+    const transformed = shouldTransformMedia(platform as PublishingPlatform, mediaType, mimeType, fileSize);
+    if (rule && !transformed) return { rule, maxSourceBytes: rule.maxBytes };
+    if (!transformed && !canTransformSource(platform as PublishingPlatform, mediaType, mimeType)) return null;
+    const transformRule = rule ?? PLATFORM_MEDIA_RULES[platform as PublishingPlatform]
+      .find((candidate) => candidate.mediaType === mediaType);
+    if (!transformRule) return null;
+    return {
+      rule: transformRule,
+      maxSourceBytes: mediaType === "image"
+        ? MAX_TRANSFORMABLE_IMAGE_SOURCE_BYTES
+        : transformRule.maxBytes,
+    };
+  });
   if (platforms.includes("snapchat") && snapchatContentType === "SPOTLIGHT" && mediaType !== "video") {
     return null;
   }
   if (rules.some((rule) => !rule)) return null;
 
-  const applicableRules = rules.filter((rule): rule is MediaRule => rule !== undefined);
+  const applicableRules = rules.filter((item): item is NonNullable<typeof item> => item !== null);
   return {
     mediaType,
     allowedFormats: uploadFormatParameter(mimeType),
-    maxBytes: Math.min(...applicableRules.map((rule) => rule.maxBytes)),
+    maxBytes: Math.min(...applicableRules.map((item) => item.maxSourceBytes)),
     minDurationSeconds: Math.max(
-      ...applicableRules.map((rule) => rule.minDurationSeconds ?? 0),
+      ...applicableRules.map((item) => item.rule.minDurationSeconds ?? 0),
       ...(platforms.includes("snapchat") && mediaType === "video"
         ? [snapchatContentType === "SPOTLIGHT" ? 6 : 5]
         : []),
     ),
     maxDurationSeconds: Math.min(
-      ...applicableRules.map((rule) => rule.maxDurationSeconds ?? Number.POSITIVE_INFINITY),
+      ...applicableRules.map((item) => item.rule.maxDurationSeconds ?? Number.POSITIVE_INFINITY),
     ),
   };
+}
+
+export function shouldTransformMedia(
+  platform: PublishingPlatform,
+  mediaType: PlatformMediaType,
+  mimeType: string,
+  fileSize?: number,
+) {
+  if (platform === "instagram") {
+    return mediaType === "image"
+      ? ["image/jpeg", "image/png", "image/webp"].includes(mimeType)
+      : ["video/mp4", "video/quicktime"].includes(mimeType);
+  }
+  if (platform === "snapchat") {
+    return mediaType === "image"
+      ? ["image/jpeg", "image/png", "image/webp"].includes(mimeType)
+      : ["video/mp4", "video/quicktime"].includes(mimeType);
+  }
+  if (platform === "facebook" && mediaType === "image") {
+    return mimeType !== "image/gif" &&
+      (mimeType === "image/webp" || (fileSize != null && fileSize > 10 * MIB));
+  }
+  return false;
+}
+
+function canTransformSource(
+  platform: PublishingPlatform,
+  mediaType: PlatformMediaType,
+  mimeType: string,
+) {
+  if (mediaType === "image") {
+    return ["image/jpeg", "image/png", "image/webp"].includes(mimeType) &&
+      (platform === "instagram" || platform === "snapchat" || platform === "facebook");
+  }
+  return platform === "snapchat" && mimeType === "video/quicktime";
 }
 
 export function uploadFormatParameter(mimeType: string) {
@@ -152,16 +205,29 @@ export function validatePlatformMedia(input: PlatformMediaMetadata): PlatformVal
       errors.push("نشر Snapchat Spotlight يتطلب فيديو بصيغة MP4.");
       continue;
     }
-    const rule = PLATFORM_MEDIA_RULES[platform]?.find((candidate) =>
+    let rule = PLATFORM_MEDIA_RULES[platform]?.find((candidate) =>
       candidate.mediaType === mediaType && candidate.formats.includes(input.mimeType),
     );
+    const canTransform = input.sourceAsset === true &&
+      (shouldTransformMedia(platform, mediaType, input.mimeType, input.fileSize) ||
+        canTransformSource(platform, mediaType, input.mimeType));
+    if (!rule && canTransform) {
+      rule = PLATFORM_MEDIA_RULES[platform]?.find((candidate) => candidate.mediaType === mediaType);
+    }
     if (!rule) {
       errors.push(platformFormatError(platform, mediaType));
       continue;
     }
 
-    if (!Number.isSafeInteger(input.fileSize) || input.fileSize <= 0 || input.fileSize > rule.maxBytes) {
-      errors.push(platformSizeError(platform, mediaType, rule.maxBytes));
+    const exceedsSourceLimit = mediaType === "image"
+      ? input.fileSize > MAX_TRANSFORMABLE_IMAGE_SOURCE_BYTES
+      : input.fileSize > rule.maxBytes;
+    if (!Number.isSafeInteger(input.fileSize) || input.fileSize <= 0 ||
+      (!canTransform && input.fileSize > rule.maxBytes) ||
+      (canTransform && exceedsSourceLimit)) {
+      errors.push(canTransform
+        ? `${platformName(platform)}: الحد الأقصى لحجم ملف المصدر القابل للتحويل هو ${mediaType === "image" ? "100 MiB" : readableSize(rule.maxBytes)}.`
+        : platformSizeError(platform, mediaType, rule.maxBytes));
     }
 
     if (mediaType !== "video") continue;
@@ -186,7 +252,7 @@ export function validatePlatformMedia(input: PlatformMediaMetadata): PlatformVal
       }
     }
 
-    if (platform === "snapchat") {
+    if (platform === "snapchat" && !canTransform) {
       if (input.width == null || input.height == null) {
         pending.push("Snapchat: انتظري حتى تكتمل قراءة أبعاد الفيديو.");
       } else if (!Number.isFinite(input.width) || !Number.isFinite(input.height) ||
@@ -197,7 +263,7 @@ export function validatePlatformMedia(input: PlatformMediaMetadata): PlatformVal
       }
     }
 
-    if (platform === "instagram") {
+    if (platform === "instagram" && !canTransform) {
       if (input.width == null || input.height == null) {
         pending.push("Instagram: انتظري حتى تكتمل قراءة أبعاد الفيديو للتحقق من نسبة Reels.");
       } else if (!Number.isFinite(input.width) || !Number.isFinite(input.height) ||
@@ -218,7 +284,7 @@ export function validatePlatformMedia(input: PlatformMediaMetadata): PlatformVal
     }
   }
 
-  if (mediaType === "image" && input.platforms.includes("instagram")) {
+  if (mediaType === "image" && input.platforms.includes("instagram") && input.sourceAsset !== true) {
     if (input.width == null || input.height == null) {
       pending.push("Instagram: انتظري حتى تكتمل قراءة أبعاد الصورة.");
     } else if (!Number.isFinite(input.width) || !Number.isFinite(input.height) ||
@@ -278,15 +344,19 @@ function platformSizeError(platform: PublishingPlatform, mediaType: PlatformMedi
   if (platform === "snapchat") {
     return `Snapchat: الحد الأقصى لحجم الوسائط هو ${Math.floor(maxBytes / MIB)} MiB.`;
   }
-  const readableSize = maxBytes >= GB
-    ? `${maxBytes / GB} GB`
-    : maxBytes < 1024 * 1024
-    ? `${Math.floor(maxBytes / 1024)} KiB`
-    : `${Math.floor(maxBytes / (1024 * 1024))} MiB`;
+  const size = readableSize(maxBytes);
   if (platform === "instagram" && mediaType === "image") {
     return "Instagram يتطلب صورة JPEG لا تتجاوز 8 MB (أقل من 8 MiB).";
   }
-  return `${platformName(platform)}: الحد الأقصى لحجم ${mediaType === "video" ? "الفيديو" : "الصورة"} هو ${readableSize}.`;
+  return `${platformName(platform)}: الحد الأقصى لحجم ${mediaType === "video" ? "الفيديو" : "الصورة"} هو ${size}.`;
+}
+
+function readableSize(maxBytes: number) {
+  return maxBytes >= GB
+    ? `${maxBytes / GB} GB`
+    : maxBytes < 1024 * 1024
+      ? `${Math.floor(maxBytes / 1024)} KiB`
+      : `${Math.floor(maxBytes / (1024 * 1024))} MiB`;
 }
 
 function platformDurationError(

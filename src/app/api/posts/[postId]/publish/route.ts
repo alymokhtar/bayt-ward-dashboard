@@ -10,6 +10,7 @@ import { prisma } from "@/lib/prisma";
 import { FACEBOOK_PAGE_ID } from "@/constants/socials";
 import { cloudinary } from "@/lib/cloudinary";
 import { mimeTypeFromCloudinaryResource, validatePlatformMedia } from "@/lib/platform-rules";
+import { getPlatformMediaUrl, verifyPlatformMediaDerivative } from "@/lib/media-transformations";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -41,6 +42,7 @@ async function assertPlatformMediaValid(
   post: {
     cloudinaryPublicId: string;
     mediaType: string;
+    mediaTransformMode: string;
     snapchatContentType: string;
   },
   platform: Platform,
@@ -63,9 +65,15 @@ async function assertPlatformMediaValid(
     height: resource.height,
     durationSeconds: resource.duration,
     snapchatContentType: post.snapchatContentType === "SPOTLIGHT" ? "SPOTLIGHT" : "STORY",
+    sourceAsset: true,
   });
   const issues = [...validation.errors, ...validation.pending];
   if (issues.length > 0) throw new Error(issues.join(" "));
+  return {
+    mimeType,
+    fileSize: resource.bytes,
+    originalUrl: resource.secure_url,
+  };
 }
 
 function toSavedPost(post: {
@@ -74,6 +82,7 @@ function toSavedPost(post: {
   mediaUrl: string;
   cloudinaryPublicId: string;
   mediaType: string;
+  mediaTransformMode: string;
   platforms: unknown;
   status: PostStatus;
   facebookStatus: PostStatus | null;
@@ -109,6 +118,7 @@ function toSavedPost(post: {
   return {
     ...post,
     mediaType: post.mediaType === "video" ? "video" as const : "image" as const,
+    mediaTransformMode: post.mediaTransformMode === "CROP" ? "CROP" as const : "FIT" as const,
     platforms: Array.isArray(post.platforms)
       ? post.platforms.filter((platform): platform is string => typeof platform === "string")
       : [],
@@ -289,12 +299,23 @@ export async function POST(
   const results = await Promise.allSettled(pendingTargets.map(async (platform) => {
     let publishedId: string;
     try {
-      await assertPlatformMediaValid(post, platform);
+      const sourceMedia = await assertPlatformMediaValid(post, platform);
+      const deliveryInput = {
+        platform,
+        publicId: post.cloudinaryPublicId,
+        originalUrl: sourceMedia.originalUrl,
+        mediaType: post.mediaType === "video" ? "video" : "image",
+        mimeType: sourceMedia.mimeType,
+        fileSize: sourceMedia.fileSize,
+        transformMode: post.mediaTransformMode === "CROP" ? "CROP" : "FIT",
+      } as const;
+      const mediaUrl = getPlatformMediaUrl(deliveryInput);
+      await verifyPlatformMediaDerivative(deliveryInput, mediaUrl);
 
       if (platform === "youtube") {
         if (post.mediaType !== "video") throw new Error("YouTube publishing requires a video.");
         if (!post.youtubeTitle.trim()) throw new Error("YouTube video title is missing.");
-        const media = await downloadCloudinaryVideo(post.mediaUrl);
+        const media = await downloadCloudinaryVideo(mediaUrl);
         const uploaded = await uploadYouTubeVideo({
           ...media,
           title: post.youtubeTitle,
@@ -322,7 +343,7 @@ export async function POST(
           throw new Error("TikTok captions cannot exceed 2,200 characters.");
         }
         const uploaded = await uploadTikTokVideo({
-          mediaUrl: post.mediaUrl,
+          mediaUrl,
           mediaPublicId: post.cloudinaryPublicId,
           caption: post.caption,
           privacyLevel: post.tiktokPrivacyLevel,
@@ -348,7 +369,7 @@ export async function POST(
 
       if (platform === "snapchat") {
         const uploaded = await publishSnapchatContent({
-          mediaUrl: post.mediaUrl,
+          mediaUrl,
           mediaPublicId: post.cloudinaryPublicId,
           mediaType: post.mediaType === "video" ? "video" : "image",
           contentType: post.snapchatContentType === "SPOTLIGHT" ? "SPOTLIGHT" : "STORY",
@@ -383,8 +404,8 @@ export async function POST(
 
       if (metaConfigurationError) throw new Error(metaConfigurationError);
       publishedId = platform === "facebook"
-        ? await publishFacebookPost(metaSettings, metaInput)
-        : await publishInstagramPost(metaSettings, metaInput);
+        ? await publishFacebookPost(metaSettings, { ...metaInput, mediaUrl })
+        : await publishInstagramPost(metaSettings, { ...metaInput, mediaUrl });
     } catch (error) {
       const unknown = platform === "youtube"
         ? error instanceof YouTubeUploadError && error.outcomeUnknown

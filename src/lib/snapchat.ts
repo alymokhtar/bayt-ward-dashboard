@@ -371,16 +371,16 @@ export async function publishSnapchatContent(input: {
     } catch {
       throw new Error("تعذّر التحقق من خصائص فيديو Snapchat في التخزين السحابي.");
     }
-    if (resource.format !== "mp4") {
-      throw new Error("نشر فيديو Snapchat يتطلب ملف MP4.");
+    if (resource.format !== "mp4" && resource.format !== "mov") {
+      throw new Error("يتعذّر تحويل صيغة الفيديو الحالية إلى MP4 للنشر على Snapchat.");
     }
     const minDuration = input.contentType === "SPOTLIGHT" ? 6 : 5;
     if (typeof resource.duration !== "number" || resource.duration < minDuration || resource.duration > 60) {
       throw new Error(`مدة فيديو Snapchat يجب أن تكون من ${minDuration} إلى 60 ثانية.`);
     }
     if (typeof resource.width !== "number" || typeof resource.height !== "number" ||
-      resource.width < 540 || resource.height < 960) {
-      throw new Error("دقة فيديو Snapchat يجب ألا تقل عن 540×960 بكسل.");
+      resource.width <= 0 || resource.height <= 0) {
+      throw new Error("تعذّر قراءة أبعاد فيديو Snapchat لتحويله.");
     }
   }
   if (input.link) {

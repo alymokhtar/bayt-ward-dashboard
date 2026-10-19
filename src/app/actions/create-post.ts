@@ -3,7 +3,7 @@
 import { cloudinary } from "@/lib/cloudinary";
 import { prisma } from "@/lib/prisma";
 import { isAdminAuthenticated } from "@/lib/admin-auth";
-import { mimeTypeFromCloudinaryResource, validatePlatformMedia } from "@/lib/platform-rules";
+import { mimeTypeFromCloudinaryResource, validatePlatformMedia, type MediaTransformMode } from "@/lib/platform-rules";
 import { isTikTokPrivacyLevel } from "@/lib/tiktok-privacy";
 
 const ALLOWED_PLATFORMS = new Set(["facebook", "instagram", "tiktok", "youtube", "snapchat"]);
@@ -13,6 +13,7 @@ export type CreatePostInput = {
   mediaUrl: string;
   cloudinaryPublicId: string;
   mediaType: "image" | "video";
+  mediaTransformMode?: MediaTransformMode;
   platforms: string[];
   tiktokPrivacyLevel?: "PUBLIC_TO_EVERYONE" | "MUTUAL_FOLLOW_FRIENDS" | "FOLLOWER_OF_CREATOR" | "SELF_ONLY";
   youtubeTitle?: string;
@@ -32,6 +33,7 @@ export type SavedPost = {
   cloudinaryPublicId: string;
   platforms: string[];
   mediaType: "image" | "video";
+  mediaTransformMode: MediaTransformMode;
   status: "PENDING" | "PUBLISHING" | "PUBLISHED" | "FAILED" | "UNKNOWN";
   facebookStatus: "PENDING" | "PUBLISHING" | "PUBLISHED" | "FAILED" | "UNKNOWN" | null;
   instagramStatus: "PENDING" | "PUBLISHING" | "PUBLISHED" | "FAILED" | "UNKNOWN" | null;
@@ -80,6 +82,7 @@ export async function createPost(input: CreatePostInput): Promise<CreatePostResu
   const mediaType = input?.mediaType === "video" || input?.mediaType === "image"
     ? input.mediaType
     : null;
+  const mediaTransformMode: MediaTransformMode = input?.mediaTransformMode === "CROP" ? "CROP" : "FIT";
   const youtubeTitle = typeof input?.youtubeTitle === "string" ? input.youtubeTitle.trim() : "";
   const youtubeDescription = typeof input?.youtubeDescription === "string" ? input.youtubeDescription.trim() : "";
   const rawYoutubeTags: unknown = input?.youtubeTags;
@@ -163,6 +166,7 @@ export async function createPost(input: CreatePostInput): Promise<CreatePostResu
     height: verifiedMedia.height,
     durationSeconds: verifiedMedia.duration,
     snapchatContentType,
+    sourceAsset: true,
   });
   if (mediaValidation.errors.length > 0 || mediaValidation.pending.length > 0) {
     return {
@@ -213,6 +217,7 @@ export async function createPost(input: CreatePostInput): Promise<CreatePostResu
         cloudinaryPublicId,
         platforms,
         mediaType,
+        mediaTransformMode,
         ...(platforms.includes("facebook") ? { facebookStatus: "PENDING" as const } : {}),
         ...(platforms.includes("instagram") ? { instagramStatus: "PENDING" as const } : {}),
         ...(platforms.includes("tiktok")
@@ -251,6 +256,7 @@ export async function createPost(input: CreatePostInput): Promise<CreatePostResu
         cloudinaryPublicId: post.cloudinaryPublicId,
         platforms,
         mediaType,
+        mediaTransformMode,
         status: post.status,
         facebookStatus: post.facebookStatus,
         instagramStatus: post.instagramStatus,

@@ -140,7 +140,7 @@ export async function uploadMediaDirectly(
   onProgress: (progress: number) => void,
   snapchatContentType: SnapchatContentType = "STORY",
 ): Promise<ConfirmedMediaUpload> {
-  const policy = getMediaUploadPolicy(file.type, platforms, snapchatContentType);
+  const policy = getMediaUploadPolicy(file.type, platforms, snapchatContentType, file.size);
   if (!policy || file.size <= 0 || file.size > policy.maxBytes) {
     throw new Error(
       policy?.mediaType === "video"

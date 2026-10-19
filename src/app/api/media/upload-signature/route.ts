@@ -57,6 +57,7 @@ export async function POST(request: Request) {
     mimeType,
     platforms as string[],
     snapchatContentType as SnapchatContentType | undefined,
+    fileSize,
   );
   if (!policy || fileSize <= 0 || fileSize > policy.maxBytes) {
     const validation = validatePlatformMedia({
@@ -64,6 +65,7 @@ export async function POST(request: Request) {
       fileSize,
       platforms: platforms as string[],
       snapchatContentType: (snapchatContentType ?? "STORY") as SnapchatContentType,
+      sourceAsset: true,
     });
     return jsonError(
       validation.errors[0] ?? "نوع الملف لا يتوافق مع المنصات المحددة.",

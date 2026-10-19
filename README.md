@@ -26,7 +26,7 @@ Configure `YOUTUBE_CLIENT_ID`, `YOUTUBE_CLIENT_SECRET`, and `YOUTUBE_REDIRECT_UR
 
 Keep `META_TOKEN_ENCRYPTION_KEY` backed up and out of source control; changing it makes saved Meta and YouTube tokens unreadable. Apply database changes with `npx prisma migrate deploy` before deploying the new app version. The migration clears any old manually entered YouTube access token, so reconnect the channel through OAuth after migration.
 
-The standalone endpoint responds with `videoId` and the YouTube watch `url`. Dashboard media is uploaded directly to Cloudinary (large files are sent in chunks), then validated against every selected platform before it is saved and again before publishing. Platform rules and their official references are documented in [docs/platform-media-validation.md](./docs/platform-media-validation.md). Use HTTPS in deployed environments.
+The standalone endpoint responds with `videoId` and the YouTube watch `url`. Dashboard media is uploaded directly to Cloudinary (large files are sent in chunks), then validated against every selected platform before it is saved and again before publishing. The dashboard previews fit/crop framing before upload; approved Instagram and Snapchat targets receive Cloudinary-generated JPEG/MP4 derivatives at publish time while the original remains intact. Apply the derivative preference migration with `npx prisma migrate deploy`. Platform rules, transformation behavior, and references are documented in [docs/platform-media-validation.md](./docs/platform-media-validation.md). Use HTTPS in deployed environments.
 
 ## TikTok Content Posting
 
