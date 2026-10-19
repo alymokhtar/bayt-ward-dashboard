@@ -238,9 +238,6 @@ export async function uploadTikTokVideo(input: {
       data: { mediaDurationSeconds: cloudinaryDuration },
     });
   }
-  if (durationSeconds === null) {
-    throw new Error("تعذّر الحصول على مدة فيديو TikTok من Cloudinary بعد 15 محاولة؛ لم يبدأ النشر.");
-  }
 
   const accessToken = await getAccessToken();
   const creator = await queryCreatorInfo(accessToken);
@@ -257,6 +254,7 @@ export async function uploadTikTokVideo(input: {
     platforms: ["tiktok"],
     durationSeconds,
     tiktokMaxDurationSeconds: creator.maxVideoPostDurationSeconds,
+    allowPendingVideoDuration: durationSeconds === null,
   });
   if (mediaValidation.errors.length > 0 || mediaValidation.pending.length > 0) {
     throw new Error([...mediaValidation.errors, ...mediaValidation.pending].join(" "));
