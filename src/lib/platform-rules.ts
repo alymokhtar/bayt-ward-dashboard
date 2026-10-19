@@ -241,14 +241,16 @@ export function validatePlatformMedia(input: PlatformMediaMetadata): PlatformVal
         ? input.tiktokMaxDurationSeconds
         : rule.maxDurationSeconds;
 
-    if (input.durationSeconds == null || !Number.isFinite(input.durationSeconds)) {
-      pending.push(`${platformName(platform)}: انتظري حتى تكتمل قراءة مدة الفيديو.`);
-    } else {
-      if (minimumDuration != null && input.durationSeconds < minimumDuration) {
-        errors.push(platformDurationError(platform, minimumDuration, maximumDuration));
-      }
-      if (maximumDuration != null && input.durationSeconds > maximumDuration) {
-        errors.push(platformDurationError(platform, minimumDuration, maximumDuration));
+    if (minimumDuration != null || maximumDuration != null) {
+      if (input.durationSeconds == null || !Number.isFinite(input.durationSeconds)) {
+        pending.push(`${platformName(platform)}: انتظري حتى تكتمل قراءة مدة الفيديو.`);
+      } else {
+        if (minimumDuration != null && input.durationSeconds < minimumDuration) {
+          errors.push(platformDurationError(platform, minimumDuration, maximumDuration));
+        }
+        if (maximumDuration != null && input.durationSeconds > maximumDuration) {
+          errors.push(platformDurationError(platform, minimumDuration, maximumDuration));
+        }
       }
     }
 

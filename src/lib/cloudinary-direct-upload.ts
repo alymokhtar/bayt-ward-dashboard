@@ -36,9 +36,27 @@ export type ConfirmedMediaUpload = {
 
 async function responseError(response: Response, fallback: string) {
   const body: unknown = await response.json().catch(() => null);
-  return body && typeof body === "object" && "error" in body && typeof body.error === "string"
+  if (!body || typeof body !== "object") return fallback;
+
+  const error = "error" in body && typeof body.error === "string"
     ? body.error
     : fallback;
+  if (!("validationDetails" in body) || !body.validationDetails ||
+    typeof body.validationDetails !== "object") {
+    return error;
+  }
+
+  const details = body.validationDetails as {
+    errors?: unknown;
+    pending?: unknown;
+  };
+  const reasons = [details.errors, details.pending]
+    .flatMap((items) => Array.isArray(items)
+      ? items.filter((item): item is string => typeof item === "string")
+      : [])
+    .filter((reason, index, items) =>
+      !error.includes(reason) && items.indexOf(reason) === index);
+  return reasons.length > 0 ? `${error} ${reasons.join(" ")}` : error;
 }
 
 function uploadChunk(
