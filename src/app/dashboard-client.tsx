@@ -393,6 +393,7 @@ export default function DashboardClient({ initialPosts, initialStats, databaseAv
   const [isDragging, setIsDragging] = useState(false);
   const [isSaving, setIsSaving] = useState(false);
   const [uploadProgress, setUploadProgress] = useState<number | null>(null);
+  const [uploadStatus, setUploadStatus] = useState("");
   const [mediaTransformMode, setMediaTransformMode] = useState<MediaTransformMode>("FIT");
   const [transformPreviewApproved, setTransformPreviewApproved] = useState(false);
   const [error, setError] = useState("");
@@ -945,11 +946,13 @@ export default function DashboardClient({ initialPosts, initialStats, databaseAv
       }
 
       setUploadProgress(0);
+      setUploadStatus("");
       const upload = await uploadMediaDirectly(
         selectedFile,
         selectedPlatforms,
         setUploadProgress,
         snapchatContentType,
+        setUploadStatus,
       );
 
       const result = await createPost({
@@ -1035,6 +1038,7 @@ export default function DashboardClient({ initialPosts, initialStats, databaseAv
         : "حدث خطأ غير متوقع. يرجى المحاولة مرة أخرى.");
     } finally {
       setUploadProgress(null);
+      setUploadStatus("");
       setIsSaving(false);
     }
   }
@@ -1307,7 +1311,7 @@ export default function DashboardClient({ initialPosts, initialStats, databaseAv
                     {isSaving && uploadProgress !== null ? (
                       <div className="mt-3 space-y-1.5" role="status" aria-live="polite">
                         <div className="flex items-center justify-between text-[11px] text-[#68756b]">
-                          <span>{uploadProgress === 100 ? "اكتمل رفع الملف، جارٍ التحقق منه..." : "جارٍ رفع الملف مباشرة إلى التخزين..."}</span>
+                          <span>{uploadStatus || (uploadProgress === 100 ? "اكتمل رفع الملف، جارٍ التحقق منه..." : "جارٍ رفع الملف مباشرة إلى التخزين...")}</span>
                           <span>{uploadProgress}%</span>
                         </div>
                         <div

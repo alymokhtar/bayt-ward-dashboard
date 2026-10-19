@@ -163,6 +163,7 @@ export async function uploadMediaDirectly(
   platforms: string[],
   onProgress: (progress: number) => void,
   snapchatContentType: SnapchatContentType = "STORY",
+  onProcessing?: (message: string) => void,
 ): Promise<ConfirmedMediaUpload> {
   const policy = getMediaUploadPolicy(file.type, platforms, snapchatContentType, file.size);
   if (!policy || file.size <= 0 || file.size > policy.maxBytes) {
@@ -258,7 +259,8 @@ export async function uploadMediaDirectly(
     });
     let confirmed: unknown;
     let confirmationResponse: Response | undefined;
-    for (let attempt = 0; attempt < 6; attempt += 1) {
+    const maxConfirmationAttempts = 6;
+    for (let attempt = 0; attempt < maxConfirmationAttempts; attempt += 1) {
       confirmationResponse = await fetch("/api/media/confirm-upload", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
@@ -266,21 +268,33 @@ export async function uploadMediaDirectly(
         body: confirmationBody,
       });
       confirmed = await confirmationResponse.json().catch(() => null);
-      if (!confirmationResponse.ok) {
-        const isRetryable = confirmed && typeof confirmed === "object" &&
-          "retryable" in confirmed && confirmed.retryable === true;
-        if (isRetryable && attempt < 5) {
-          await new Promise((resolve) => setTimeout(resolve, Math.min(1000 * 2 ** attempt, 5000)));
+      const validationPending = confirmed && typeof confirmed === "object" &&
+        "validationDetails" in confirmed && confirmed.validationDetails &&
+        typeof confirmed.validationDetails === "object" &&
+        "pending" in confirmed.validationDetails &&
+        Array.isArray(confirmed.validationDetails.pending) &&
+        confirmed.validationDetails.pending.some((item) => typeof item === "string");
+      const retryable = confirmed && typeof confirmed === "object" &&
+        (("retryable" in confirmed && confirmed.retryable === true) ||
+          ("processing" in confirmed && confirmed.processing === true) ||
+          validationPending);
+
+      if (confirmationResponse.status === 202 || retryable) {
+        if (attempt < maxConfirmationAttempts - 1) {
+          onProcessing?.(
+            `جاري معالجة الفيديو وتأكيد البيانات... (${attempt + 1}/${maxConfirmationAttempts - 1})`,
+          );
+          await new Promise((resolve) => setTimeout(resolve, 2500));
           continue;
         }
-        if (isRetryable) {
-          throw new VideoMetadataPendingError(
-            responseErrorMessage(
-              confirmed,
-              "ما زال Cloudinary يجهّز بيانات الفيديو. انتظري قليلاً ثم أعيدي المحاولة.",
-            ),
-          );
-        }
+        throw new VideoMetadataPendingError(
+          responseErrorMessage(
+            confirmed,
+            "ما زال Cloudinary يجهّز بيانات الفيديو. انتظري قليلاً ثم أعيدي المحاولة.",
+          ),
+        );
+      }
+      if (!confirmationResponse.ok) {
         throw new Error(responseErrorMessage(confirmed, "تعذّر التحقق من الملف المرفوع."));
       }
       break;
